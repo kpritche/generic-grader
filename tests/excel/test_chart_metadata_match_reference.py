@@ -148,8 +148,51 @@ def test_failing_similarity_case(fix_syspath):
     with pytest.raises(AssertionError) as exc_info:
         test_method()
 
-    assert "similar" in str(exc_info.value)
+    # Normalize the wrapper's line breaks so assertions do not depend on
+    # where wrapper.fill happens to split a line.
+    message = " ".join(str(exc_info.value).split())
+    # The message must not hand the student the reference chart's title.
+    # On assignments where writing the title is part of the graded work,
+    # echoing it is the answer.
+    assert "Monthly Sales Analysis" not in message
+    # It must still be actionable: name the sheet and report what the
+    # submission actually contains.
+    assert "Sheet1" in message
+    assert "Random Chart" in message
     assert test_method.__score__ == 0
+
+
+def test_failing_similarity_case_includes_hint(fix_syspath):
+    """The assignment's own hint must survive into the no-match message."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[{"title": "Monthly Sales Analysis"}],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[{"title": "Random Chart"}],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_ratio=0.8,
+            hint="Check the chart on the summary tab.",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "Check the chart on the summary tab." in message
+    assert "Monthly Sales Analysis" not in message
 
 
 def test_failing_missing_submission_title(fix_syspath):

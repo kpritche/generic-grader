@@ -36,7 +36,34 @@ def _similarity(actual: str | None, expected: str | None) -> float:
     return normalized_similarity(actual_normalized, expected_normalized)
 
 
-def _match_reference_to_submission(ref_charts: list[dict], sub_charts: list[dict], ratio: float):
+def _describe_titles(charts: list[dict]) -> str:
+    """Summarize the titles found on a set of charts, for student feedback."""
+
+    titles = [chart.get("title") for chart in charts if _is_meaningful(chart.get("title"))]
+    if not titles:
+        return "None of the charts on that sheet have a title."
+    quoted = ", ".join(f"`{title.strip()}`" for title in titles)
+    plural = "titles" if len(titles) > 1 else "title"
+    return f"The chart {plural} found there: {quoted}."
+
+
+def _match_reference_to_submission(
+    ref_charts: list[dict],
+    sub_charts: list[dict],
+    ratio: float,
+    sheet: str | None = None,
+    hint: str = "",
+    wrapper=None,
+):
+    """Pair each reference chart with the submission chart whose title is closest.
+
+    The failure message deliberately does NOT quote the reference chart's
+    title.  On assignments where writing the title is part of the graded
+    work, echoing the expected title hands the student the answer.  Report
+    what the submission contains instead, and let the assignment's own hint
+    say where to look.
+    """
+
     available = sub_charts.copy()
     pairs = []
 
@@ -56,9 +83,18 @@ def _match_reference_to_submission(ref_charts: list[dict], sub_charts: list[dict
                 best_match = sub_chart
 
         if best_match is None or best_ratio < ratio:
-            raise AssertionError(
-                f"Could not find a submission chart title similar to '{ref_title}'."
+            where = f" on sheet `{sheet}`" if sheet else ""
+            message = (
+                f"No chart{where} has a title close enough to the one this"
+                " check expects, so the chart could not be identified."
+                f"  {_describe_titles(sub_charts)}"
+                "  Confirm the chart the instructions ask for is on that"
+                " sheet, and that its title describes what the chart plots."
+                + (hint and f"  {hint}" or "")
             )
+            if wrapper is not None:
+                message = "\n\nHint:\n" + wrapper.fill(message)
+            raise AssertionError(message)
 
         available.remove(best_match)
         pairs.append((ref_chart, best_match))
@@ -139,6 +175,9 @@ def build(the_options):
                 ref_charts,
                 sub_charts,
                 o.chart_ratio,
+                sheet=o.sheet,
+                hint=o.hint,
+                wrapper=self.wrapper,
             )
 
             for ref_chart, sub_chart in matched_charts:
