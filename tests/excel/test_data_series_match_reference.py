@@ -46,6 +46,25 @@ def test_instance_has_test_method(built_instance):
 
 
 def test_doc_func_same_range_default(built_instance):
+    # Relocation is on by default, so the title must not promise a
+    # same-cell requirement.
+    assert (
+        built_instance.test_data_series_match_reference_0.__doc__
+        == "Check that the data series in range A2:A5 on sheet `<first worksheet>` exactly matches the reference values."
+    )
+
+
+def test_doc_func_same_range_strict():
+    built_class = build(
+        Options(
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            series_allow_relocation=False,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class()
+
     assert (
         built_instance.test_data_series_match_reference_0.__doc__
         == "Check that the data series in range A2:A5 on sheet `<first worksheet>` exactly matches the reference values at the same cell locations."
@@ -442,4 +461,268 @@ def test_require_formulas_search_mode_empty_cell_fails(fix_syspath):
         test_method()
 
     assert "is not a formula cell" in str(exc_info.value)
+    assert test_method.__score__ == 0
+
+
+# ---------------------------------------------------------------------------
+# Relocation fallback (same-location branch): when the expected window fails,
+# an intact series found elsewhere on the sheet (same orientation, length >= 3)
+# earns credit under the same formula requirement.  Common cause: an inserted
+# or deleted row shifting an otherwise-correct block off its template cells.
+#
+# openpyxl cannot write a cached result next to a formula, so fixtures that
+# need a formula cell with a value (the shape a desktop Excel save produces)
+# inject the `<v>` element into the sheet XML after saving.
+# ---------------------------------------------------------------------------
+
+
+def write_workbook_with_cached_formulas(path, cells=None, cached=None):
+    """Write a workbook where *cached* maps cell -> (formula, cached_value)."""
+
+    import re
+    import zipfile
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Sheet1"
+    for cell, value in (cells or {}).items():
+        worksheet[cell] = value
+    for cell, (formula, _value) in (cached or {}).items():
+        worksheet[cell] = formula
+    workbook.save(path)
+
+    with zipfile.ZipFile(path) as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+
+    sheet_xml = entries["xl/worksheets/sheet1.xml"].decode()
+    for cell, (_formula, value) in (cached or {}).items():
+        pattern = rf'(<c r="{cell}"[^>]*>)(<f>[^<]*</f>)'
+        sheet_xml, count = re.subn(pattern, rf"\g<1>\g<2><v>{value}</v>", sheet_xml)
+        assert count == 1, f"could not inject cached value for {cell}"
+    entries["xl/worksheets/sheet1.xml"] = sheet_xml.encode()
+
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in entries.items():
+            archive.writestr(name, data)
+
+
+def test_relocated_series_passes(fix_syspath):
+    # Row-shifted submission: the whole block sits one row low.
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20, "A5": 30, "A6": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_relocated_series_with_formulas_passes(fix_syspath):
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_with_cached_formulas(
+        fix_syspath / "submission.xlsx",
+        cached={
+            "A3": ("=5+5", 10),
+            "A4": ("=10+10", 20),
+            "A5": ("=15+15", 30),
+            "A6": ("=20+20", 40),
+        },
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            series_require_formulas=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_relocation_prefers_formula_window(fix_syspath):
+    # The series values appear twice: a typed copy in column A (scanned
+    # first) and a formula-backed copy in column C.  The formula copy must
+    # win even though the typed copy is found earlier.
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_with_cached_formulas(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20, "A5": 30, "A6": 40},
+        cached={
+            "C2": ("=5+5", 10),
+            "C3": ("=10+10", 20),
+            "C4": ("=15+15", 30),
+            "C5": ("=20+20", 40),
+        },
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            series_require_formulas=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_relocation_found_typed_copy_fails_with_location(fix_syspath):
+    # The only relocated copy is typed numbers; with formulas required the
+    # check still fails, and the message names where the values were found.
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20, "A5": 30, "A6": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            series_require_formulas=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = str(exc_info.value)
+    assert "did not meet the expected" in message
+    assert "A matching series was found at `A3:A6`" in message
+    assert "must contain a formula" in message
+    assert test_method.__score__ == 0
+
+
+def test_relocation_partial_match_names_closest_window(fix_syspath):
+    # No window fully matches; the failure message points at the closest one.
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20, "A5": 999, "A6": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "did not meet the expected" in message
+    assert "The closest match found was at `A3:A6` (ratio 0.75)" in message
+    assert "inserted or deleted rows" in message
+    assert test_method.__score__ == 0
+
+
+def test_relocation_disabled_restores_strict_behavior(fix_syspath):
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20, "A5": 30, "A6": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            series_allow_relocation=False,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = str(exc_info.value)
+    assert "did not meet the expected" in message
+    assert "closest match" not in message
+    assert "matching series" not in message
+    assert test_method.__score__ == 0
+
+
+def test_relocation_skipped_below_minimum_length(fix_syspath):
+    # A two-value series matches elsewhere too easily to mean anything, so
+    # relocation never applies to it.
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A3": 10, "A4": 20},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A3"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = str(exc_info.value)
+    assert "did not meet the expected" in message
+    assert "closest match" not in message
     assert test_method.__score__ == 0

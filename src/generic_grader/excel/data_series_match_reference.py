@@ -1,15 +1,16 @@
 """Test that a reference data series matches in-range or somewhere in submission."""
 
 import unittest
-from math import isclose
 
 from openpyxl.utils.cell import range_boundaries
 from parameterized import parameterized
 
 from generic_grader.excel._series import (
+    _series_ratio,
     extract_series_from_range,
     find_best_series_window,
     find_exact_series_window,
+    find_series_windows,
 )
 from generic_grader.excel._workbook import (
     is_formula_value,
@@ -32,16 +33,26 @@ def doc_func(func, num, param):
     require_formulas = o.series_require_formulas
     range_matches_reference = o.range_matches_reference
     formula_suffix = " and uses formulas" if require_formulas else ""
-    location_clause = (
-        "matches the reference values at the same cell locations"
-        if range_matches_reference
-        else "matches somewhere in the submission workbook"
-    )
+    if range_matches_reference:
+        # With relocation enabled a shifted-but-intact series can still earn
+        # credit, so the title must not promise a same-cell requirement.
+        location_clause = (
+            "matches the reference values"
+            if o.series_allow_relocation
+            else "matches the reference values at the same cell locations"
+        )
+    else:
+        location_clause = "matches somewhere in the submission workbook"
     return (
         f"Check that the data series in range {start_cell}:{end_cell}"
         f" on sheet `{sheet}` exactly {location_clause}"
         f"{formula_suffix}."
     )
+
+
+# Relocation needs enough values that finding the series elsewhere is
+# meaningful evidence; short series match too easily by coincidence.
+MIN_RELOCATION_LENGTH = 3
 
 
 def _iter_series_coordinates(match: dict):
@@ -56,38 +67,6 @@ def _iter_series_coordinates(match: dict):
 
     for row in range(min_row, max_row + 1):
         yield row, min_col
-
-
-def _series_ratio(values_a, values_b, relative_tolerance: float, absolute_tolerance: float):
-    if len(values_a) != len(values_b):
-        return 0.0
-
-    if not values_b:
-        return 1.0
-
-    n_matches = 0
-    for value_a, value_b in zip(values_a, values_b, strict=True):
-        if isinstance(value_a, str):
-            value_a = value_a.strip().casefold()
-        if isinstance(value_b, str):
-            value_b = value_b.strip().casefold()
-
-        if isinstance(value_a, bool) or isinstance(value_b, bool):
-            is_match = value_a == value_b
-        elif isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
-            is_match = isclose(
-                float(value_a),
-                float(value_b),
-                rel_tol=relative_tolerance,
-                abs_tol=absolute_tolerance,
-            )
-        else:
-            is_match = value_a == value_b
-
-        if is_match:
-            n_matches += 1
-
-    return n_matches / len(values_b)
 
 
 def build(the_options):
@@ -153,22 +132,108 @@ def build(the_options):
                     o.absolute_tolerance,
                 )
 
-                self.assertGreaterEqual(
-                    ratio,
-                    o.ratio,
-                    msg=(
-                        "\n\nHint:\n"
-                        + self.wrapper.fill(
-                            f"Data series in `{start_cell}:{end_cell}` on sheet `{sheet}`"
-                            " did not meet the expected match ratio"
-                            f" ({ratio:.2f} < {o.ratio:.2f})."
-                            + (o.hint and f"  {o.hint}" or "")
-                        )
-                    ),
-                )
-
+                sub_sheet_formulas = None
+                aligned_formula_gaps = []
                 if require_formulas:
                     sub_sheet_formulas = load_sheet(sub_file, sheet, data_only=False)
+                    aligned_formula_gaps = [
+                        (row, col)
+                        for row, col in _iter_series_coordinates(series)
+                        if not is_formula_value(
+                            sub_sheet_formulas.cell(row, col).value
+                        )
+                    ]
+
+                aligned_ok = ratio >= o.ratio and not aligned_formula_gaps
+
+                def window_is_aligned(window):
+                    return (window["start_cell"], window["end_cell"]) == (
+                        series["start_cell"],
+                        series["end_cell"],
+                    )
+
+                def window_has_all_formulas(window):
+                    return all(
+                        is_formula_value(sub_sheet_formulas.cell(row, col).value)
+                        for row, col in _iter_series_coordinates(window)
+                    )
+
+                # Aligned-first, relocation-fallback: when the expected window
+                # fails, look for the intact series elsewhere on the sheet
+                # (same orientation) and award credit if it satisfies the same
+                # requirements.  Common cause: an inserted or deleted row
+                # shifting an otherwise-correct block off its template cells.
+                relocated_window = None
+                relocation_windows = []
+                allow_relocation = (
+                    o.series_allow_relocation
+                    and not aligned_ok
+                    and len(series["values"]) >= MIN_RELOCATION_LENGTH
+                )
+                if allow_relocation:
+                    relocation_windows = [
+                        window
+                        for window in find_series_windows(
+                            sub_sheet,
+                            series["values"],
+                            series["orientation"],
+                            o.relative_tolerance,
+                            o.absolute_tolerance,
+                            o.ratio,
+                        )
+                        if not window_is_aligned(window)
+                    ]
+                    for window in relocation_windows:
+                        if not require_formulas or window_has_all_formulas(window):
+                            relocated_window = window
+                            break
+
+                if not aligned_ok and relocated_window is None:
+                    diagnostic = ""
+                    if allow_relocation and ratio < o.ratio:
+                        if relocation_windows:
+                            found = relocation_windows[0]
+                            diagnostic = (
+                                "  A matching series was found at"
+                                f" `{found['start_cell']}:{found['end_cell']}`,"
+                                " but every cell in it must contain a formula."
+                            )
+                        else:
+                            best = find_best_series_window(
+                                sub_sheet,
+                                series["values"],
+                                series["orientation"],
+                                o.relative_tolerance,
+                                o.absolute_tolerance,
+                            )
+                            if (
+                                best is not None
+                                and best["ratio"] > ratio
+                                and not window_is_aligned(best)
+                            ):
+                                diagnostic = (
+                                    "  The closest match found was at"
+                                    f" `{best['start_cell']}:{best['end_cell']}`"
+                                    f" (ratio {best['ratio']:.2f})."
+                                    " If your values moved, check for inserted"
+                                    " or deleted rows or columns."
+                                )
+
+                    self.assertGreaterEqual(
+                        ratio,
+                        o.ratio,
+                        msg=(
+                            "\n\nHint:\n"
+                            + self.wrapper.fill(
+                                f"Data series in `{start_cell}:{end_cell}` on sheet `{sheet}`"
+                                " did not meet the expected match ratio"
+                                f" ({ratio:.2f} < {o.ratio:.2f})."
+                                + diagnostic
+                                + (o.hint and f"  {o.hint}" or "")
+                            )
+                        ),
+                    )
+
                     for row, col in _iter_series_coordinates(series):
                         with self.subTest(row=row, column=col):
                             cell = sub_sheet_formulas.cell(row, col)

@@ -156,6 +156,77 @@ def find_best_series_window(
     return best_match
 
 
+def find_series_windows(
+    sheet,
+    target: list,
+    search_orientation: str,
+    relative_tolerance: float,
+    absolute_tolerance: float,
+    min_ratio: float,
+):
+    """Return every row/column window whose match ratio is at least min_ratio.
+
+    Windows are sorted by ratio (descending); ties keep scan order (rows
+    before columns, top-left first), so callers get a deterministic
+    preference order.
+    """
+
+    if not target:
+        return []
+
+    max_row = sheet.max_row
+    max_col = sheet.max_column
+    if max_row == 0 or max_col == 0:
+        return []
+
+    length = len(target)
+    orientations = normalize_search_orientation(search_orientation)
+    windows = []
+
+    if "row" in orientations and length <= max_col:
+        for row in range(1, max_row + 1):
+            for col in range(1, max_col - length + 2):
+                candidate = [sheet.cell(row, col + i).value for i in range(length)]
+                ratio = _series_ratio(
+                    candidate,
+                    target,
+                    relative_tolerance,
+                    absolute_tolerance,
+                )
+                if ratio >= min_ratio:
+                    windows.append(
+                        {
+                            "orientation": "row",
+                            "start_cell": _coord(row, col),
+                            "end_cell": _coord(row, col + length - 1),
+                            "ratio": ratio,
+                        }
+                    )
+
+    if "column" in orientations and length <= max_row:
+        for col in range(1, max_col + 1):
+            for row in range(1, max_row - length + 2):
+                candidate = [sheet.cell(row + i, col).value for i in range(length)]
+                ratio = _series_ratio(
+                    candidate,
+                    target,
+                    relative_tolerance,
+                    absolute_tolerance,
+                )
+                if ratio >= min_ratio:
+                    windows.append(
+                        {
+                            "orientation": "column",
+                            "start_cell": _coord(row, col),
+                            "end_cell": _coord(row + length - 1, col),
+                            "ratio": ratio,
+                        }
+                    )
+
+    windows.sort(key=lambda window: -window["ratio"])
+    return windows
+
+
 def find_exact_series_window(
     sheet,
     target: list,

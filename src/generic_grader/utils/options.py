@@ -87,6 +87,11 @@ class Options:
     sheet: str = ""
     range_matches_reference: bool = True
     series_require_formulas: bool = False
+    # When a same-location series check fails, search the sheet for the
+    # intact series (same orientation, at least 3 values) and award credit
+    # if it is found and satisfies the same formula requirement.  Set False
+    # to require the exact template location.
+    series_allow_relocation: bool = True
     chart_ratio: float = 0.9
     chart_fields: tuple = ("title", "x_axis_label", "y_axis_label")
     chart_require_title: bool = False
