@@ -5,6 +5,7 @@ import unittest
 from parameterized import parameterized
 from rapidfuzz.distance.Levenshtein import normalized_similarity
 
+from generic_grader.excel._units import canonicalize_label, label_unit
 from generic_grader.excel._workbook import (
     extract_chart_info_from_workbook,
     resolve_reference_file,
@@ -34,6 +35,41 @@ def _similarity(actual: str | None, expected: str | None) -> float:
     if not actual_normalized and not expected_normalized:
         return 1.0
     return normalized_similarity(actual_normalized, expected_normalized)
+
+
+def _label_is_meaningful(text: str | None) -> bool:
+    return bool(canonicalize_label(text))
+
+
+def _units_differ(actual: str | None, expected: str | None) -> bool:
+    """True when both labels carry a recognized unit and the units differ.
+
+    The similarity ratio cannot see this on its own: once units are
+    abbreviated, ``cm`` for ``mm`` costs one character against a long
+    label and still clears the ratio.
+    """
+
+    actual_unit = label_unit(actual)
+    expected_unit = label_unit(expected)
+    return (
+        actual_unit is not None
+        and expected_unit is not None
+        and actual_unit != expected_unit
+    )
+
+
+def _label_similarity(actual: str | None, expected: str | None) -> float:
+    """Compare axis labels with their units spelled one way.
+
+    ``Applied Load (N)`` and ``Applied Load (P) [Newtons]`` describe the
+    same axis; see ``canonicalize_label``.
+    """
+
+    actual_canonical = canonicalize_label(actual)
+    expected_canonical = canonicalize_label(expected)
+    if not actual_canonical and not expected_canonical:
+        return 1.0
+    return normalized_similarity(actual_canonical, expected_canonical)
 
 
 def _total_points(chart: dict):
@@ -336,8 +372,15 @@ def build(the_options):
                         if expected is None:
                             continue
 
+                        # Titles are compared as written.  Axis labels are
+                        # compared with their units canonicalized, so the
+                        # spelling of a unit never decides the grade.
+                        is_title = field == "title"
+                        meaningful = _is_meaningful if is_title else _label_is_meaningful
+                        similarity = _similarity if is_title else _label_similarity
+
                         self.assertTrue(
-                            _is_meaningful(actual),
+                            meaningful(actual),
                             msg=(
                                 "\n\nHint:\n"
                                 + self.wrapper.fill(
@@ -352,10 +395,23 @@ def build(the_options):
                         # graded on presence, not on similarity to the
                         # reference, unless the check opts in to strict
                         # title matching.
-                        if field == "title" and not o.chart_title_match_reference:
+                        if is_title and not o.chart_title_match_reference:
                             continue
 
-                        ratio = _similarity(actual, expected)
+                        if not is_title:
+                            self.assertFalse(
+                                _units_differ(actual, expected),
+                                msg=(
+                                    "\n\nHint:\n"
+                                    + self.wrapper.fill(
+                                        f"The `{field}` for chart `{sub_chart.get('chart_file')}`"
+                                        " carries a different unit than the reference chart."
+                                        + (o.hint and f"  {o.hint}" or "")
+                                    )
+                                ),
+                            )
+
+                        ratio = similarity(actual, expected)
                         self.assertGreaterEqual(
                             ratio,
                             o.chart_ratio,

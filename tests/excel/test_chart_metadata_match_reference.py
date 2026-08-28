@@ -661,3 +661,98 @@ def test_matches_charts_by_title_not_order(fix_syspath):
     test_method()
 
     assert test_method.__score__ == test_method.__weight__
+
+
+def test_unit_abbreviation_in_axis_label_passes(fix_syspath):
+    """An axis label that abbreviates the unit passes at the default ratio.
+
+    The reference writes the unit out and names the variable; a student who
+    writes ``Applied Load (N)`` has labeled the same axis.
+    """
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Beam Deflection",
+                "x_axis_label": "Applied Load (P) [Newtons]",
+                "y_axis_label": "Deflection (δ) [mm]",
+                "kind": "scatter",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Load vs Deflection",
+                "x_axis_label": "Applied Load (N)",
+                "y_axis_label": "Deflection (millimeters)",
+                "kind": "scatter",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_wrong_unit_in_axis_label_fails(fix_syspath):
+    """A label whose unit differs from the reference fails on the unit.
+
+    The similarity ratio alone cannot catch this: ``cm`` for ``mm`` costs
+    one character against a long label and clears 0.9.
+    """
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Beam Deflection",
+                "x_axis_label": "Applied Load (P) [Newtons]",
+                "y_axis_label": "Deflection (δ) [mm]",
+                "kind": "scatter",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Load vs Deflection",
+                "x_axis_label": "Applied Load (P) [N]",
+                "y_axis_label": "Deflection (δ) [cm]",
+                "kind": "scatter",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "y_axis_label" in message
+    assert "different unit" in message
+    assert test_method.__score__ == 0
