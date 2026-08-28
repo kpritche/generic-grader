@@ -95,6 +95,13 @@ class Options:
     chart_ratio: float = 0.9
     chart_fields: tuple = ("title", "x_axis_label", "y_axis_label")
     chart_require_title: bool = False
+    # When True, the chart title must be similar to the reference title
+    # (legacy behavior; use only when the task prescribes the exact title).
+    # When False, charts are identified by sheet and chart type, and the
+    # title is graded as present-and-meaningful instead of
+    # similar-to-reference.  Axis labels keep the similarity check either
+    # way.
+    chart_title_match_reference: bool = False
     # Semantic data-table matching (used by data_table_match_reference)
     header_ratio: float = 0.9
     strict_headers: bool = False

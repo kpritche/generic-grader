@@ -102,13 +102,74 @@ def _match_reference_to_submission(
     return pairs
 
 
+def _pair_reference_to_submission(
+    ref_charts: list[dict],
+    sub_charts: list[dict],
+    sheet: str | None = None,
+    hint: str = "",
+    wrapper=None,
+):
+    """Pair each reference chart with a submission chart by chart type.
+
+    Unlike ``_match_reference_to_submission``, the pairing never fails on
+    title dissimilarity: students author their own titles, so the title
+    cannot identify the chart.  Candidates whose chart type matches the
+    reference are preferred; among several candidates, the closest title
+    wins as a deterministic tie-break.  Pairing fails only when the
+    submission has fewer charts than the reference expects.
+    """
+
+    available = sub_charts.copy()
+    pairs = []
+
+    for ref_chart in ref_charts:
+        ref_types = sorted(ref_chart.get("types", []))
+        typed = [
+            chart
+            for chart in available
+            if sorted(chart.get("types", [])) == ref_types
+        ]
+        candidates = typed or available
+
+        if not candidates:
+            where = f" on sheet `{sheet}`" if sheet else ""
+            message = (
+                f"The reference workbook expects more charts{where} than your"
+                " submission contains, so one of the expected charts could"
+                " not be found."
+                f"  {_describe_titles(sub_charts)}"
+                + (hint and f"  {hint}" or "")
+            )
+            if wrapper is not None:
+                message = "\n\nHint:\n" + wrapper.fill(message)
+            raise AssertionError(message)
+
+        ref_title = ref_chart.get("title")
+        best_match = max(
+            candidates,
+            key=lambda chart: (
+                _similarity(chart.get("title"), ref_title),
+                str(chart.get("chart_file")),
+            ),
+        )
+        available.remove(best_match)
+        pairs.append((ref_chart, best_match))
+
+    return pairs
+
+
 def doc_func(func, num, param):
     """Return parameterized docstring for chart metadata checks."""
 
     o = param.args[0]
+    if o.chart_title_match_reference:
+        return (
+            f"Check that chart title and axis labels on sheet `{o.sheet}` are"
+            " meaningfully similar to the reference workbook."
+        )
     return (
-        f"Check that chart title and axis labels on sheet `{o.sheet}` are"
-        " meaningfully similar to the reference workbook."
+        f"Check that the chart on sheet `{o.sheet}` has a descriptive title"
+        " and axis labels similar to the reference workbook."
     )
 
 
@@ -171,14 +232,23 @@ def build(the_options):
                             ),
                         )
 
-            matched_charts = _match_reference_to_submission(
-                ref_charts,
-                sub_charts,
-                o.chart_ratio,
-                sheet=o.sheet,
-                hint=o.hint,
-                wrapper=self.wrapper,
-            )
+            if o.chart_title_match_reference:
+                matched_charts = _match_reference_to_submission(
+                    ref_charts,
+                    sub_charts,
+                    o.chart_ratio,
+                    sheet=o.sheet,
+                    hint=o.hint,
+                    wrapper=self.wrapper,
+                )
+            else:
+                matched_charts = _pair_reference_to_submission(
+                    ref_charts,
+                    sub_charts,
+                    sheet=o.sheet,
+                    hint=o.hint,
+                    wrapper=self.wrapper,
+                )
 
             for ref_chart, sub_chart in matched_charts:
                 # --- structural checks (always enforced) ---
@@ -235,6 +305,13 @@ def build(the_options):
                                 )
                             ),
                         )
+
+                        # Students author their own titles, so a title is
+                        # graded on presence, not on similarity to the
+                        # reference, unless the check opts in to strict
+                        # title matching.
+                        if field == "title" and not o.chart_title_match_reference:
+                            continue
 
                         ratio = _similarity(actual, expected)
                         self.assertGreaterEqual(
