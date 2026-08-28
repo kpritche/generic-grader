@@ -36,6 +36,25 @@ def _similarity(actual: str | None, expected: str | None) -> float:
     return normalized_similarity(actual_normalized, expected_normalized)
 
 
+def _total_points(chart: dict):
+    """Sum the plotted data points across a chart's series.
+
+    Returns None when any series' point count is unknown, so callers can
+    fall back to comparing series counts.
+    """
+
+    series = chart.get("series", [])
+    if not series:
+        return None
+    total = 0
+    for entry in series:
+        count = entry.get("point_count")
+        if count is None:
+            return None
+        total += count
+    return total
+
+
 def _describe_titles(charts: list[dict]) -> str:
     """Summarize the titles found on a set of charts, for student feedback."""
 
@@ -270,21 +289,44 @@ def build(the_options):
                     )
 
                 with self.subTest(chart=sub_chart.get("chart_file"), field="series_count"):
-                    ref_count = len(ref_chart.get("series", []))
-                    sub_count = len(sub_chart.get("series", []))
-                    self.assertEqual(
-                        ref_count,
-                        sub_count,
-                        msg=(
-                            "\n\nHint:\n"
-                            + self.wrapper.fill(
-                                f"Chart `{sub_chart.get('chart_file')}` on sheet"
-                                f" `{o.sheet}` has {sub_count} data series,"
-                                f" but the reference expects {ref_count}."
-                                + (o.hint and f"  {o.hint}" or "")
-                            )
-                        ),
-                    )
+                    # Splitting one series into several (one per category)
+                    # renders the same chart, so compare the total number
+                    # of plotted data points rather than the series count.
+                    # Fall back to the series count only when a point
+                    # count could not be extracted on either side.
+                    ref_total = _total_points(ref_chart)
+                    sub_total = _total_points(sub_chart)
+                    if ref_total is not None and sub_total is not None:
+                        self.assertEqual(
+                            ref_total,
+                            sub_total,
+                            msg=(
+                                "\n\nHint:\n"
+                                + self.wrapper.fill(
+                                    f"Chart `{sub_chart.get('chart_file')}` on sheet"
+                                    f" `{o.sheet}` plots {sub_total} data"
+                                    f" value{'s' if sub_total != 1 else ''},"
+                                    f" but the reference expects {ref_total}."
+                                    + (o.hint and f"  {o.hint}" or "")
+                                )
+                            ),
+                        )
+                    else:
+                        ref_count = len(ref_chart.get("series", []))
+                        sub_count = len(sub_chart.get("series", []))
+                        self.assertEqual(
+                            ref_count,
+                            sub_count,
+                            msg=(
+                                "\n\nHint:\n"
+                                + self.wrapper.fill(
+                                    f"Chart `{sub_chart.get('chart_file')}` on sheet"
+                                    f" `{o.sheet}` has {sub_count} data series,"
+                                    f" but the reference expects {ref_count}."
+                                    + (o.hint and f"  {o.hint}" or "")
+                                )
+                            ),
+                        )
 
                 # --- metadata checks (controlled by o.chart_fields) ---
                 for field in o.chart_fields:

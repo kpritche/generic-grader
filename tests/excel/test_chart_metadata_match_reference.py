@@ -2,8 +2,9 @@ import unittest
 
 import pytest
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart import BarChart, LineChart, Reference, ScatterChart, Series
 
+from generic_grader.excel._workbook import extract_chart_info_from_workbook
 from generic_grader.excel.chart_metadata_match_reference import build
 from generic_grader.utils.options import Options
 
@@ -22,18 +23,41 @@ def write_chart_workbook(path, sheet_name="Sheet1", chart_specs=None):
     chart_specs = chart_specs or []
     for i, spec in enumerate(chart_specs):
         values_col = spec.get("values_col", 2)
-        chart_class = BarChart if spec.get("kind") == "bar" else LineChart
+        kinds = {"bar": BarChart, "scatter": ScatterChart}
+        chart_class = kinds.get(spec.get("kind"), LineChart)
         chart = chart_class()
         chart_title = spec.get("title")
         if chart_title is not None:
             chart.title = chart_title
         chart.x_axis.title = spec.get("x_axis_label")
         chart.y_axis.title = spec.get("y_axis_label")
+        if spec.get("kind") == "scatter":
+            # Excel writes the x value-axis at the bottom; openpyxl
+            # defaults both scatter axes to the left position.
+            chart.x_axis.axPos = "b"
 
-        values = Reference(worksheet, min_col=values_col, min_row=1, max_row=5)
-        categories = Reference(worksheet, min_col=1, min_row=2, max_row=5)
-        chart.add_data(values, titles_from_data=True)
-        chart.set_categories(categories)
+        max_row = spec.get("max_row", 5)
+        if spec.get("split_series"):
+            # One single-point series per data row, the way a student
+            # who picked each value separately builds the chart.
+            for row in range(2, max_row + 1):
+                values = Reference(
+                    worksheet, min_col=values_col, min_row=row, max_row=row
+                )
+                chart.append(Series(values))
+        elif spec.get("kind") == "scatter":
+            x_values = Reference(worksheet, min_col=1, min_row=2, max_row=max_row)
+            y_values = Reference(
+                worksheet, min_col=values_col, min_row=2, max_row=max_row
+            )
+            chart.append(Series(y_values, x_values))
+        else:
+            values = Reference(
+                worksheet, min_col=values_col, min_row=1, max_row=max_row
+            )
+            categories = Reference(worksheet, min_col=1, min_row=2, max_row=max_row)
+            chart.add_data(values, titles_from_data=True)
+            chart.set_categories(categories)
         worksheet.add_chart(chart, f"E{2 + i * 14}")
 
     workbook.save(path)
@@ -397,6 +421,119 @@ def test_wrong_chart_type_fails(fix_syspath):
 
     assert "chart type" in str(exc_info.value)
     assert test_method.__score__ == 0
+
+
+def test_split_series_equivalent_passes(fix_syspath):
+    """One series of N points equals N single-point series."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Cost Comparison",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+                "split_series": True,
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_ratio=0.8,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_missing_data_points_fail(fix_syspath):
+    """A chart plotting fewer total values than the reference still fails."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+                "max_row": 4,
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_ratio=0.8,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "plots 3 data values" in message
+    assert test_method.__score__ == 0
+
+
+def test_scatter_axis_labels_extracted_by_position(fix_syspath):
+    """Scatter charts (two valAx) report x and y labels by axis position."""
+
+    path = fix_syspath / "scatter.xlsx"
+    write_chart_workbook(
+        path,
+        chart_specs=[
+            {
+                "title": "Sales vs Month Index",
+                "x_axis_label": "Month Index",
+                "y_axis_label": "Revenue Dollars",
+                "kind": "scatter",
+            }
+        ],
+    )
+
+    charts = extract_chart_info_from_workbook(str(path), sheet="Sheet1")
+    assert len(charts) == 1
+    assert charts[0]["x_axis_label"] == "Month Index"
+    assert charts[0]["y_axis_label"] == "Revenue Dollars"
+    assert charts[0]["types"] == ["scatterChart"]
 
 
 def test_fewer_charts_than_reference_fails(fix_syspath):

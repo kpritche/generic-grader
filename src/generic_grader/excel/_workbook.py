@@ -2,6 +2,7 @@
 
 import glob
 import posixpath
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -196,11 +197,29 @@ def _extract_chart_info(chart_xml: bytes, chart_file: str) -> dict:
         "series": [],
     }
 
-    cat_axis = root.find(".//c:catAx", NS)
-    chart_info["x_axis_label"] = _extract_title_text(cat_axis)
+    # Map axes to x/y by their rendered position (axPos: b/t = horizontal,
+    # l/r = vertical). Scatter charts carry two valAx and no catAx, so
+    # keying on the element name would grade the x-axis title as the y
+    # label and never see the real y title. Fall back to the element-name
+    # mapping only when a slot is still empty (e.g. axPos missing).
+    for axis in root.findall(".//c:plotArea/*", NS):
+        tag_name = axis.tag.split("}")[-1]
+        if tag_name not in ("catAx", "valAx", "dateAx"):
+            continue
+        pos_node = axis.find("c:axPos", NS)
+        pos = pos_node.get("val") if pos_node is not None else None
+        if pos in ("b", "t") and chart_info["x_axis_label"] is None:
+            chart_info["x_axis_label"] = _extract_title_text(axis)
+        elif pos in ("l", "r") and chart_info["y_axis_label"] is None:
+            chart_info["y_axis_label"] = _extract_title_text(axis)
 
-    val_axis = root.find(".//c:valAx", NS)
-    chart_info["y_axis_label"] = _extract_title_text(val_axis)
+    if chart_info["x_axis_label"] is None:
+        cat_axis = root.find(".//c:catAx", NS)
+        chart_info["x_axis_label"] = _extract_title_text(cat_axis)
+
+    if chart_info["y_axis_label"] is None:
+        val_axis = root.find(".//c:valAx", NS)
+        chart_info["y_axis_label"] = _extract_title_text(val_axis)
 
     plot_area = root.find(".//c:plotArea", NS)
     if plot_area is not None:
@@ -210,18 +229,76 @@ def _extract_chart_info(chart_xml: bytes, chart_file: str) -> dict:
                 chart_info["types"].append(tag_name)
 
     for i, series in enumerate(root.findall(".//c:ser", NS), start=1):
-        series_info = {"series_number": i, "x_range": None, "y_range": None}
+        series_info = {
+            "series_number": i,
+            "x_range": None,
+            "y_range": None,
+            "point_count": None,
+        }
         cat_formula = series.find(".//c:cat//c:f", NS)
         if cat_formula is not None:
             series_info["x_range"] = cat_formula.text
 
-        val_formula = series.find(".//c:val//c:f", NS)
-        if val_formula is not None:
-            series_info["y_range"] = val_formula.text
+        # Scatter series carry their values under c:yVal; every other
+        # chart type uses c:val.
+        val_node = series.find("c:val", NS)
+        if val_node is None:
+            val_node = series.find("c:yVal", NS)
+        if val_node is not None:
+            val_formula = val_node.find(".//c:f", NS)
+            if val_formula is not None:
+                series_info["y_range"] = val_formula.text
+            series_info["point_count"] = _extract_point_count(
+                val_node, series_info["y_range"]
+            )
 
         chart_info["series"].append(series_info)
 
     return chart_info
+
+
+_RANGE_RE = re.compile(
+    r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?$"
+)
+
+
+def _extract_point_count(val_node, range_formula):
+    """Count the data points a series plots.
+
+    Prefer the cached point count Excel writes next to the range; fall
+    back to counting cached points, then to the span of the range
+    formula. Returns None when none of those are available.
+    """
+
+    pt_count = val_node.find(".//c:ptCount", NS)
+    if pt_count is not None and pt_count.get("val", "").isdigit():
+        return int(pt_count.get("val"))
+
+    points = val_node.findall(".//c:pt", NS)
+    if points:
+        return len(points)
+
+    if range_formula:
+        match = _RANGE_RE.search(range_formula.split(",")[-1].strip())
+        if match:
+            col1, row1, col2, row2 = match.groups()
+            if col2 is None:
+                return 1
+            if col1 == col2:
+                return abs(int(row2) - int(row1)) + 1
+            if row1 == row2:
+                return abs(
+                    _column_index(col2) - _column_index(col1)
+                ) + 1
+
+    return None
+
+
+def _column_index(letters: str) -> int:
+    index = 0
+    for ch in letters:
+        index = index * 26 + (ord(ch) - ord("A") + 1)
+    return index
 
 
 def extract_chart_info_from_workbook(xlsx_filepath: str, sheet: str | None = None) -> list[dict]:
