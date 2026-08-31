@@ -86,3 +86,41 @@ def test_missing_file_message_names_pattern_files_and_mistakes(fix_syspath):
     assert "`lab_report.pdf`" in message
     assert "for a different assignment" in message
     assert ".xlsx.xlsx" in message
+
+
+def test_submitted_file_names_hides_grader_infrastructure(fix_syspath):
+    """The listing reports the student's files, not the grader's own.
+
+    On Gradescope the grader is unpacked into the same directory as the
+    submission, so a bare listing reports run_autograder and setup.sh
+    back to the student as files they uploaded.
+    """
+
+    for name in ("run_autograder", "run_tests.py", "post.py", "setup.sh"):
+        (fix_syspath / name).write_text("")
+    (fix_syspath / "test_config.py").write_text("")
+    for name in ("tests", "results", "__pycache__"):
+        (fix_syspath / name).mkdir()
+    (fix_syspath / ".gitignore").write_text("")
+
+    (fix_syspath / "3.1.2_powerData_login.xlsx").write_text("")
+    (fix_syspath / "lab_report.pdf").write_text("")
+
+    assert submitted_file_names("wanted*.xlsx") == [
+        "3.1.2_powerData_login.xlsx",
+        "lab_report.pdf",
+    ]
+
+
+def test_missing_file_hint_hides_grader_infrastructure(fix_syspath):
+    """The hint a student reads names only the student's own files."""
+
+    for name in ("run_autograder", "run_tests.py", "post.py", "setup.sh"):
+        (fix_syspath / name).write_text("")
+    (fix_syspath / "lab_report.pdf").write_text("")
+
+    message = missing_file_message("3.1.2_powerdata_*.xlsx")
+    assert "`lab_report.pdf`" in message
+    assert "run_autograder" not in message
+    assert "setup.sh" not in message
+    assert "post.py" not in message

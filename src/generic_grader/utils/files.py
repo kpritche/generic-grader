@@ -72,11 +72,38 @@ def glob_ci(pattern: str) -> list[str]:
     return sorted(dict.fromkeys(matches))
 
 
+# The grader unpacks its own machinery into the same directory the
+# submission is unpacked into, so a bare listing of that directory
+# reports run_autograder and setup.sh back to the student as though they
+# had uploaded them.  These names are excluded by exact match only.
+#
+# Matching on the extension instead would be wrong: Python assignments
+# legitimately ask students to submit .py files.  The cost of exact-name
+# matching is that a student file that happens to be named post.py or
+# test_config.py is hidden from the listing.  That is the right trade --
+# a name colliding with the grader's own is not a name the student can
+# be told to look for anyway, and hiding one entry is far less confusing
+# than listing the whole grader.
+GRADER_INFRASTRUCTURE_NAMES = frozenset(
+    {
+        "run_autograder",
+        "run_tests.py",
+        "post.py",
+        "setup.sh",
+        "test_config.py",
+        "tests",
+        "results",
+        "__pycache__",
+    }
+)
+
+
 def submitted_file_names(pattern: str = "") -> list[str]:
     """Return the names of the files sitting next to where *pattern* looks.
 
     Symlinks are skipped because the grader creates them itself, and so
-    are dot files, which no student uploads on purpose.
+    are dot files, which no student uploads on purpose.  So is the
+    grader's own machinery -- see GRADER_INFRASTRUCTURE_NAMES.
     """
 
     directory = Path(pattern).parent if pattern else Path(".")
@@ -88,7 +115,10 @@ def submitted_file_names(pattern: str = "") -> list[str]:
     names = [
         entry.name
         for entry in entries
-        if entry.is_file() and not entry.is_symlink() and not entry.name.startswith(".")
+        if entry.is_file()
+        and not entry.is_symlink()
+        and not entry.name.startswith(".")
+        and entry.name not in GRADER_INFRASTRUCTURE_NAMES
     ]
     return sorted(names)
 
