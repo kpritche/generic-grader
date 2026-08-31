@@ -13,6 +13,8 @@ from generic_grader.excel._series import (
     find_series_windows,
 )
 from generic_grader.excel._workbook import (
+    UNCACHED_VALUES_HINT,
+    formulas_lack_cached_values,
     is_formula_value,
     load_sheet,
     resolve_reference_file,
@@ -189,6 +191,20 @@ def build(the_options):
                             break
 
                 if not aligned_ok and relocated_window is None:
+                    # A workbook saved without its cached formula results
+                    # reads as empty everywhere.  Say so, rather than
+                    # blaming values the student cannot see are missing.
+                    if ratio < o.ratio and formulas_lack_cached_values(
+                        sub_file, sheet, list(_iter_series_coordinates(series))
+                    ):
+                        self.fail(
+                            "\n\nHint:\n"
+                            + self.wrapper.fill(
+                                UNCACHED_VALUES_HINT
+                                + (o.hint and f"  {o.hint}" or "")
+                            )
+                        )
+
                     diagnostic = ""
                     if allow_relocation and ratio < o.ratio:
                         if relocation_windows:
@@ -266,6 +282,26 @@ def build(the_options):
                         o.relative_tolerance,
                         o.absolute_tolerance,
                     )
+
+                    # Same diagnosis as the aligned branch, but the series
+                    # could be anywhere, so the whole sheet is scanned.
+                    # Missing an exact match is not itself a failure -- a
+                    # check with a ratio below 1.0 still awards credit for
+                    # a close enough window -- so this only speaks up when
+                    # the check is otherwise about to fail.
+                    about_to_fail = (
+                        best_match is None
+                        or o.ratio >= 1.0
+                        or best_match["ratio"] < o.ratio
+                    )
+                    if about_to_fail and formulas_lack_cached_values(sub_file, sheet):
+                        self.fail(
+                            "\n\nHint:\n"
+                            + self.wrapper.fill(
+                                UNCACHED_VALUES_HINT
+                                + (o.hint and f"  {o.hint}" or "")
+                            )
+                        )
 
                     if best_match is None:
                         self.fail(

@@ -160,6 +160,53 @@ def load_sheet(path: str, sheet: str | None, data_only: bool):
     return workbook[resolved]
 
 
+UNCACHED_VALUES_HINT = (
+    "Your workbook has formulas in the cells this check reads, but it"
+    " does not carry the results those formulas produce, so every one of"
+    " those cells reads as empty.  A workbook saved by Google Sheets,"
+    " Numbers, or an online editor is stored this way.  Open the workbook"
+    " in the desktop version of Excel, save it there, and upload the copy"
+    " Excel saved."
+)
+
+
+def formulas_lack_cached_values(path: str, sheet: str | None, coordinates=None) -> bool:
+    """Report whether formulas are present but their results are not.
+
+    Data checks read cached formula results, which is what
+    ``data_only=True`` returns.  Excel writes those results into the file
+    when it saves; several other editors do not.  The cells then read as
+    empty and the check blames the values, or the formulas, when the real
+    problem is the program that saved the file.
+
+    Returns True only when the range holds at least one formula and no
+    formula in it has a cached result, so a workbook that is merely
+    wrong does not get this diagnosis.  *coordinates* is a sequence of
+    (row, column) pairs; the whole sheet is scanned when it is omitted.
+    """
+
+    formula_sheet = load_sheet(path, sheet, data_only=False)
+    value_sheet = load_sheet(path, sheet, data_only=True)
+
+    if coordinates is None:
+        coordinates = [
+            (cell.row, cell.column)
+            for row in formula_sheet.iter_rows()
+            for cell in row
+        ]
+
+    found_formula = False
+    for row, column in coordinates:
+        if not is_formula_value(formula_sheet.cell(row, column).value):
+            continue
+        found_formula = True
+        cached = value_sheet.cell(row, column).value
+        if cached is not None and str(cached).strip() != "":
+            return False
+
+    return found_formula
+
+
 def range_shape(start_cell: str, end_cell: str) -> tuple[int, int]:
     """Return (height, width) for an Excel range."""
 

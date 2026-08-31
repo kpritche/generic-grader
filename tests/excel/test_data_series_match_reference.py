@@ -4,6 +4,7 @@ import pytest
 from openpyxl import Workbook
 from openpyxl.worksheet.formula import ArrayFormula
 
+from generic_grader.excel._workbook import formulas_lack_cached_values
 from generic_grader.excel.data_series_match_reference import build
 from generic_grader.utils.options import Options
 
@@ -792,3 +793,204 @@ def test_missing_sheet_gives_a_hint_not_a_traceback(fix_syspath):
     assert "`Summary`" in message
     assert "does not exist" not in message
     assert test_method.__score__ == 0
+
+
+# ---------------------------------------------------------------------------
+# Uncached formula results: a workbook saved by an editor that does not write
+# the values its formulas produce reads as empty in every data check.
+# ---------------------------------------------------------------------------
+
+
+def write_workbook_without_cached_values(path, cells=None, sheet_name="Sheet1"):
+    """Write a workbook whose formulas carry no cached results.
+
+    openpyxl has no calculation engine, so a workbook it writes never
+    holds a formula result.  That is exactly the state a workbook saved
+    by Google Sheets, Numbers, or an online editor arrives in.
+    """
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = sheet_name
+    for cell, formula in (cells or {}).items():
+        worksheet[cell] = formula
+    workbook.save(path)
+
+
+def test_uncached_formula_results_are_named_as_the_cause(fix_syspath):
+    """Formulas with no cached results get their own message."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_without_cached_values(
+        fix_syspath / "submission.xlsx",
+        cells={"A2": "=5+5", "A3": "=10+10", "A4": "=15+15", "A5": "=20+20"},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "does not carry the results those formulas produce" in message
+    assert "desktop version of Excel" in message
+    # The generic ratio message would send the student after the wrong thing.
+    assert "did not meet the expected match ratio" not in message
+    assert test_method.__score__ == 0
+
+
+def test_uncached_formula_results_named_in_search_mode(fix_syspath):
+    """Search mode reports the same cause when nothing can be found."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_without_cached_values(
+        fix_syspath / "submission.xlsx",
+        cells={"C1": "=5+5", "C2": "=10+10", "C3": "=15+15", "C4": "=20+20"},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            range_matches_reference=False,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "does not carry the results those formulas produce" in message
+    assert test_method.__score__ == 0
+
+
+def test_uncached_message_carries_the_assignment_hint(fix_syspath):
+    """The per-assignment hint rides along, as it does on every message."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_without_cached_values(
+        fix_syspath / "submission.xlsx",
+        cells={"A2": "=5+5", "A3": "=10+10", "A4": "=15+15", "A5": "=20+20"},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            hint="See step 4 of the task.",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    assert "See step 4 of the task." in " ".join(str(exc_info.value).split())
+
+
+def test_wrong_values_are_not_blamed_on_caching(fix_syspath):
+    """A workbook with cached results keeps the ordinary failure message."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook_with_cached_formulas(
+        fix_syspath / "submission.xlsx",
+        cached={
+            "A2": ("=5+5", 10),
+            "A3": ("=10+10", 20),
+            "A4": ("=15+15", 999),
+            "A5": ("=20+20", 40),
+        },
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "did not meet the expected match ratio" in message
+    assert "does not carry the results" not in message
+
+
+def test_typed_values_are_not_blamed_on_caching(fix_syspath):
+    """A workbook with no formulas at all keeps the ordinary message."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"A2": 1, "A3": 2, "A4": 3, "A5": 4},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "did not meet the expected match ratio" in message
+    assert "does not carry the results" not in message
+
+
+def test_formulas_lack_cached_values_helper(fix_syspath):
+    """The detector needs a formula present and every result missing."""
+
+    uncached = fix_syspath / "uncached.xlsx"
+    write_workbook_without_cached_values(uncached, cells={"A2": "=5+5"})
+    assert formulas_lack_cached_values(str(uncached), "Sheet1") is True
+
+    cached = fix_syspath / "cached.xlsx"
+    write_workbook_with_cached_formulas(cached, cached={"A2": ("=5+5", 10)})
+    assert formulas_lack_cached_values(str(cached), "Sheet1") is False
+
+    typed = fix_syspath / "typed.xlsx"
+    write_workbook(typed, cells={"A2": 10})
+    assert formulas_lack_cached_values(str(typed), "Sheet1") is False
