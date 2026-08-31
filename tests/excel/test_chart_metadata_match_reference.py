@@ -2,10 +2,22 @@ import unittest
 
 import pytest
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, LineChart, Reference, ScatterChart, Series
+from openpyxl.chart import (
+    BarChart,
+    BarChart3D,
+    LineChart,
+    Reference,
+    ScatterChart,
+    Series,
+)
 
 from generic_grader.excel._workbook import extract_chart_info_from_workbook
-from generic_grader.excel.chart_metadata_match_reference import build
+from generic_grader.excel.chart_metadata_match_reference import (
+    build,
+    graded_metadata_fields,
+    grades_title_by_similarity,
+    normalized_chart_types,
+)
 from generic_grader.utils.options import Options
 
 
@@ -23,7 +35,7 @@ def write_chart_workbook(path, sheet_name="Sheet1", chart_specs=None):
     chart_specs = chart_specs or []
     for i, spec in enumerate(chart_specs):
         values_col = spec.get("values_col", 2)
-        kinds = {"bar": BarChart, "scatter": ScatterChart}
+        kinds = {"bar": BarChart, "bar3d": BarChart3D, "scatter": ScatterChart}
         chart_class = kinds.get(spec.get("kind"), LineChart)
         chart = chart_class()
         chart_title = spec.get("title")
@@ -35,6 +47,15 @@ def write_chart_workbook(path, sheet_name="Sheet1", chart_specs=None):
             # Excel writes the x value-axis at the bottom; openpyxl
             # defaults both scatter axes to the left position.
             chart.x_axis.axPos = "b"
+        if spec.get("horizontal"):
+            # A horizontal bar chart: Excel renders the categories up the
+            # left side and the values along the bottom, so the category
+            # axis is the one on the left.  openpyxl does not set these
+            # positions for us, so the fixture writes them the way Excel
+            # would.
+            chart.type = "bar"
+            chart.x_axis.axPos = "l"
+            chart.y_axis.axPos = "b"
 
         max_row = spec.get("max_row", 5)
         if spec.get("split_series"):
@@ -94,7 +115,24 @@ def test_instance_has_test_method(built_instance):
 def test_doc_func(built_instance):
     assert (
         built_instance.test_chart_metadata_match_reference_0.__doc__
-        == "Check that the chart on sheet `Sheet1` has a descriptive title and axis labels similar to the reference workbook."
+        == "Check that the chart on sheet `Sheet1` is the expected chart type and plots the expected data."
+    )
+
+
+def test_doc_func_graded_title_and_labels():
+    built_class = build(
+        Options(
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_title=True,
+            chart_grade_axis_labels=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class()
+    assert (
+        built_instance.test_chart_metadata_match_reference_0.__doc__
+        == "Check that the chart on sheet `Sheet1` is the expected chart type and plots the expected data, and has a descriptive title and has axis labels similar to the reference workbook."
     )
 
 
@@ -103,6 +141,7 @@ def test_doc_func_strict_title():
         Options(
             required_files=("submission.xlsx",),
             sheet="Sheet1",
+            chart_grade_title=True,
             chart_title_match_reference=True,
             kwargs={"reference_file": "reference.xlsx"},
         )
@@ -110,8 +149,42 @@ def test_doc_func_strict_title():
     built_instance = built_class()
     assert (
         built_instance.test_chart_metadata_match_reference_0.__doc__
-        == "Check that chart title and axis labels on sheet `Sheet1` are meaningfully similar to the reference workbook."
+        == "Check that the chart on sheet `Sheet1` is the expected chart type and plots the expected data, and has a title similar to the reference workbook."
     )
+
+
+def test_grading_flags_default_off():
+    """Title and axis-label grading are both off unless a task opts in."""
+
+    o = Options()
+    assert o.chart_grade_title is False
+    assert o.chart_grade_axis_labels is False
+    assert o.chart_title_match_reference is False
+
+
+def test_strict_title_flag_is_inert_without_title_grading():
+    """chart_title_match_reference alone must not restore title grading.
+
+    Identifying a chart by its title is itself title grading, so the
+    legacy flag stays inert until `chart_grade_title` turns grading on.
+    """
+
+    o = Options(chart_title_match_reference=True)
+    assert grades_title_by_similarity(o) is False
+    assert graded_metadata_fields(o) == ()
+
+
+def test_graded_metadata_fields_follow_the_flags():
+    base = {"sheet": "Sheet1"}
+    assert graded_metadata_fields(Options(**base)) == ()
+    assert graded_metadata_fields(Options(**base, chart_grade_title=True)) == ("title",)
+    assert graded_metadata_fields(Options(**base, chart_grade_axis_labels=True)) == (
+        "x_axis_label",
+        "y_axis_label",
+    )
+    assert graded_metadata_fields(
+        Options(**base, chart_grade_title=True, chart_grade_axis_labels=True)
+    ) == ("title", "x_axis_label", "y_axis_label")
 
 
 def test_passing_fuzzy_case(fix_syspath):
@@ -197,7 +270,11 @@ def test_self_authored_title_passes(fix_syspath):
 
 
 def test_failing_axis_label_case(fix_syspath):
-    """Dissimilar axis labels still fail, without leaking the reference title."""
+    """Dissimilar axis labels fail under opt-in axis grading.
+
+    The message must not leak the reference title or the reference label
+    wording, even when the labels are what is being graded.
+    """
 
     write_chart_workbook(
         fix_syspath / "reference.xlsx",
@@ -226,6 +303,7 @@ def test_failing_axis_label_case(fix_syspath):
             required_files=("submission.xlsx",),
             sheet="Sheet1",
             chart_ratio=0.8,
+            chart_grade_axis_labels=True,
             kwargs={"reference_file": "reference.xlsx"},
         )
     )
@@ -244,7 +322,7 @@ def test_failing_axis_label_case(fix_syspath):
 
 
 def test_strict_title_mode_restores_identification_gate(fix_syspath):
-    """chart_title_match_reference=True keeps the legacy title gate and hint."""
+    """The two title flags together keep the legacy title gate and hint."""
 
     write_chart_workbook(
         fix_syspath / "reference.xlsx",
@@ -261,6 +339,7 @@ def test_strict_title_mode_restores_identification_gate(fix_syspath):
             required_files=("submission.xlsx",),
             sheet="Sheet1",
             chart_ratio=0.8,
+            chart_grade_title=True,
             chart_title_match_reference=True,
             hint="Check the chart on the summary tab.",
             kwargs={"reference_file": "reference.xlsx"},
@@ -280,8 +359,8 @@ def test_strict_title_mode_restores_identification_gate(fix_syspath):
     assert test_method.__score__ == 0
 
 
-def test_blank_title_still_fails(fix_syspath):
-    """A blank title fails the presence check even in the default mode."""
+def test_blank_title_passes_by_default(fix_syspath):
+    """A blank title passes when the task does not grade titles."""
 
     write_chart_workbook(
         fix_syspath / "reference.xlsx",
@@ -314,12 +393,132 @@ def test_blank_title_still_fails(fix_syspath):
     )
     built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
     test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_blank_title_fails_when_title_graded(fix_syspath):
+    """The opt-in title flag restores the presence check on the title."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Sales Analysis",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "   ",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_title=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
 
     with pytest.raises(AssertionError) as exc_info:
         test_method()
 
-    assert "missing or not meaningful" in str(exc_info.value)
+    message = " ".join(str(exc_info.value).split())
+    assert "missing or not meaningful" in message
+    assert "Monthly Sales Analysis" not in message
     assert test_method.__score__ == 0
+
+
+def test_blank_axis_labels_pass_by_default(fix_syspath):
+    """Blank axis labels pass when the task does not grade labels."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Sales Analysis",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Sales Analysis",
+                "x_axis_label": None,
+                "y_axis_label": None,
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_wrong_axis_labels_pass_by_default(fix_syspath):
+    """Axis labels unlike the reference pass when labels are not graded."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Sales Analysis",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Random Chart",
+                "x_axis_label": "Thing",
+                "y_axis_label": "Stuff",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
 
 
 def test_pairs_by_chart_type_before_title(fix_syspath):
@@ -664,7 +863,7 @@ def test_matches_charts_by_title_not_order(fix_syspath):
 
 
 def test_unit_abbreviation_in_axis_label_passes(fix_syspath):
-    """An axis label that abbreviates the unit passes at the default ratio.
+    """An axis label that abbreviates the unit passes under axis grading.
 
     The reference writes the unit out and names the variable; a student who
     writes ``Applied Load (N)`` has labeled the same axis.
@@ -698,6 +897,7 @@ def test_unit_abbreviation_in_axis_label_passes(fix_syspath):
             weight=1,
             required_files=("submission.xlsx",),
             sheet="Sheet1",
+            chart_grade_axis_labels=True,
             kwargs={"reference_file": "reference.xlsx"},
         )
     )
@@ -708,12 +908,61 @@ def test_unit_abbreviation_in_axis_label_passes(fix_syspath):
     assert test_method.__score__ == test_method.__weight__
 
 
-def test_wrong_unit_in_axis_label_fails(fix_syspath):
-    """A label whose unit differs from the reference fails on the unit.
+def test_wrong_unit_in_axis_label_fails_when_labels_graded(fix_syspath):
+    """The opt-in axis flag restores the unit gate as well as the ratio.
 
     The similarity ratio alone cannot catch this: ``cm`` for ``mm`` costs
     one character against a long label and clears 0.9.
     """
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Beam Deflection",
+                "x_axis_label": "Applied Load (P) [Newtons]",
+                "y_axis_label": "Deflection (δ) [mm]",
+                "kind": "scatter",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Load vs Deflection",
+                "x_axis_label": "Applied Load (P) [N]",
+                "y_axis_label": "Deflection (δ) [cm]",
+                "kind": "scatter",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_axis_labels=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "y_axis_label" in message
+    assert "different unit" in message
+    # The reference label wording must not leak either.
+    assert "mm" not in message
+    assert test_method.__score__ == 0
+
+
+def test_wrong_unit_in_axis_label_passes_by_default(fix_syspath):
+    """A wrong-unit label passes when the task does not grade labels."""
 
     write_chart_workbook(
         fix_syspath / "reference.xlsx",
@@ -748,11 +997,133 @@ def test_wrong_unit_in_axis_label_fails(fix_syspath):
     )
     built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
     test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
 
-    with pytest.raises(AssertionError) as exc_info:
-        test_method()
+    assert test_method.__score__ == test_method.__weight__
 
-    message = " ".join(str(exc_info.value).split())
-    assert "y_axis_label" in message
-    assert "different unit" in message
-    assert test_method.__score__ == 0
+
+def test_bar_3d_chart_matches_2d_bar_reference(fix_syspath):
+    """A 3-D bar chart grades as the 2-D bar chart the reference expects."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar3d",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_axis_labels=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_bar_3d_chart_type_is_extracted_as_3d(fix_syspath):
+    """The extractor reports the raw type; only the comparison folds it."""
+
+    path = fix_syspath / "bar3d.xlsx"
+    write_chart_workbook(
+        path,
+        chart_specs=[{"title": "Cost by Month", "kind": "bar3d"}],
+    )
+
+    charts = extract_chart_info_from_workbook(str(path), sheet="Sheet1")
+    assert charts[0]["types"] == ["bar3DChart"]
+    assert normalized_chart_types(charts[0]) == ["barChart"]
+
+
+def test_horizontal_bar_axis_labels_map_by_role(fix_syspath):
+    """A horizontal bar chart maps its category axis to x, not by position.
+
+    Excel puts the category axis on the LEFT for a horizontal bar chart,
+    so mapping axes by rendered position compares both labels against the
+    wrong reference axis.
+    """
+
+    path = fix_syspath / "horizontal.xlsx"
+    write_chart_workbook(
+        path,
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost (dollars)",
+                "kind": "bar",
+                "horizontal": True,
+            }
+        ],
+    )
+
+    charts = extract_chart_info_from_workbook(str(path), sheet="Sheet1")
+    assert charts[0]["x_axis_label"] == "Month"
+    assert charts[0]["y_axis_label"] == "Cost (dollars)"
+
+
+def test_horizontal_bar_passes_axis_grading(fix_syspath):
+    """Correct labels on a horizontal bar chart pass opt-in axis grading."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost (dollars)",
+                "kind": "bar",
+                "horizontal": True,
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Cost",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost (dollars)",
+                "kind": "bar",
+                "horizontal": True,
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_axis_labels=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__

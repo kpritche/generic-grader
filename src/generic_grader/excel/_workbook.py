@@ -197,29 +197,50 @@ def _extract_chart_info(chart_xml: bytes, chart_file: str) -> dict:
         "series": [],
     }
 
-    # Map axes to x/y by their rendered position (axPos: b/t = horizontal,
-    # l/r = vertical). Scatter charts carry two valAx and no catAx, so
-    # keying on the element name would grade the x-axis title as the y
-    # label and never see the real y title. Fall back to the element-name
-    # mapping only when a slot is still empty (e.g. axPos missing).
+    # Map axes to x/y by their ROLE when the chart has a category axis:
+    # the category axis is the x axis and the value axis is the y axis,
+    # whatever the rendered position.  A horizontal bar chart (barDir=bar)
+    # puts its category axis on the left and its value axis at the bottom,
+    # so mapping by position alone compares both labels against the wrong
+    # reference axis.  A date axis plays the same role as a category axis.
+    #
+    # Scatter charts carry two valAx and no catAx, so role cannot separate
+    # them; there, and only there, fall back to the rendered position
+    # (axPos: b/t = horizontal, l/r = vertical).  serAx (present on 3-D
+    # charts) is the depth axis and is never x or y.
+    axes = []
     for axis in root.findall(".//c:plotArea/*", NS):
         tag_name = axis.tag.split("}")[-1]
-        if tag_name not in ("catAx", "valAx", "dateAx"):
-            continue
-        pos_node = axis.find("c:axPos", NS)
-        pos = pos_node.get("val") if pos_node is not None else None
-        if pos in ("b", "t") and chart_info["x_axis_label"] is None:
-            chart_info["x_axis_label"] = _extract_title_text(axis)
-        elif pos in ("l", "r") and chart_info["y_axis_label"] is None:
-            chart_info["y_axis_label"] = _extract_title_text(axis)
+        if tag_name in ("catAx", "valAx", "dateAx"):
+            axes.append((tag_name, axis))
 
-    if chart_info["x_axis_label"] is None:
-        cat_axis = root.find(".//c:catAx", NS)
-        chart_info["x_axis_label"] = _extract_title_text(cat_axis)
+    category_axes = [axis for tag_name, axis in axes if tag_name in ("catAx", "dateAx")]
+    value_axes = [axis for tag_name, axis in axes if tag_name == "valAx"]
 
-    if chart_info["y_axis_label"] is None:
-        val_axis = root.find(".//c:valAx", NS)
-        chart_info["y_axis_label"] = _extract_title_text(val_axis)
+    if category_axes:
+        chart_info["x_axis_label"] = _extract_title_text(category_axes[0])
+        if value_axes:
+            chart_info["y_axis_label"] = _extract_title_text(value_axes[0])
+    else:
+        for _tag_name, axis in axes:
+            pos_node = axis.find("c:axPos", NS)
+            pos = pos_node.get("val") if pos_node is not None else None
+            if pos in ("b", "t") and chart_info["x_axis_label"] is None:
+                chart_info["x_axis_label"] = _extract_title_text(axis)
+            elif pos in ("l", "r") and chart_info["y_axis_label"] is None:
+                chart_info["y_axis_label"] = _extract_title_text(axis)
+
+        # A chart with no axPos at all still needs both slots filled.
+        unlabeled = [
+            axis
+            for _tag_name, axis in axes
+            if axis.find("c:axPos", NS) is None
+        ]
+        for axis in unlabeled:
+            if chart_info["x_axis_label"] is None:
+                chart_info["x_axis_label"] = _extract_title_text(axis)
+            elif chart_info["y_axis_label"] is None:
+                chart_info["y_axis_label"] = _extract_title_text(axis)
 
     plot_area = root.find(".//c:plotArea", NS)
     if plot_area is not None:

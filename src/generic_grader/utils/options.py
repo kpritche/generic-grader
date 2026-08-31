@@ -95,12 +95,31 @@ class Options:
     chart_ratio: float = 0.9
     chart_fields: tuple = ("title", "x_axis_label", "y_axis_label")
     chart_require_title: bool = False
-    # When True, the chart title must be similar to the reference title
-    # (legacy behavior; use only when the task prescribes the exact title).
-    # When False, charts are identified by sheet and chart type, and the
-    # title is graded as present-and-meaningful instead of
-    # similar-to-reference.  Axis labels keep the similarity check either
-    # way.
+    # Chart checks grade three things by default: that the chart exists on
+    # the named sheet, that its chart type is correct, and that it plots
+    # the expected number of data values.  Wording -- the chart title and
+    # the axis labels -- is NOT graded by default, because most tasks do
+    # not prescribe it.  The two flags below opt a task back in.
+    #
+    # When True, the chart title is graded.  Presence alone by default: the
+    # title must be present and meaningful.  Combine with
+    # `chart_title_match_reference` to also require similarity to the
+    # reference title.  When False, the title is ignored entirely: a blank
+    # title passes, and charts are identified by chart type rather than by
+    # title.
+    chart_grade_title: bool = False
+    # When True, the axis labels are graded.  Each must be present and
+    # meaningful, must carry the same unit as the corresponding reference
+    # label when both name a unit, and must reach `chart_ratio` similarity
+    # once units are canonicalized.  When False, axis labels are ignored
+    # entirely: blank, wrong, and wrong-unit labels all pass.
+    chart_grade_axis_labels: bool = False
+    # When True, the chart title must be similar to the reference title,
+    # and the title is also used to identify which submitted chart to
+    # grade (legacy behavior; use only when the task prescribes the exact
+    # title).  This flag is inert unless `chart_grade_title` is also True:
+    # identifying a chart by its title is itself a form of title grading,
+    # so it must not reach a task that has opted out of grading titles.
     chart_title_match_reference: bool = False
     # Semantic data-table matching (used by data_table_match_reference)
     header_ratio: float = 0.9

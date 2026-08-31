@@ -72,6 +72,25 @@ def _label_similarity(actual: str | None, expected: str | None) -> float:
     return normalized_similarity(actual_canonical, expected_canonical)
 
 
+def _normalize_chart_type(chart_type: str) -> str:
+    """Return a chart type with its 3-D variant folded onto the 2-D name.
+
+    Excel writes a 3-D bar chart as ``bar3DChart`` and a flat one as
+    ``barChart``.  The two render the same data the same way, so a student
+    who picked the 3-D style from the chart gallery has made the chart the
+    task asked for.  The same holds for the line, pie, area, and surface
+    families.  Scatter charts have no 3-D form, so nothing changes there.
+    """
+
+    return chart_type.replace("3D", "")
+
+
+def normalized_chart_types(chart: dict) -> list[str]:
+    """Return a chart's types, sorted, with 3-D variants folded in."""
+
+    return sorted(_normalize_chart_type(name) for name in chart.get("types", []))
+
+
 def _total_points(chart: dict):
     """Sum the plotted data points across a chart's series.
 
@@ -178,11 +197,11 @@ def _pair_reference_to_submission(
     pairs = []
 
     for ref_chart in ref_charts:
-        ref_types = sorted(ref_chart.get("types", []))
+        ref_types = normalized_chart_types(ref_chart)
         typed = [
             chart
             for chart in available
-            if sorted(chart.get("types", [])) == ref_types
+            if normalized_chart_types(chart) == ref_types
         ]
         candidates = typed or available
 
@@ -213,19 +232,56 @@ def _pair_reference_to_submission(
     return pairs
 
 
+def graded_metadata_fields(o) -> tuple[str, ...]:
+    """Return the metadata fields this check grades, in `chart_fields` order.
+
+    Titles and axis labels are graded only when the task opts in with
+    `chart_grade_title` or `chart_grade_axis_labels`.  With neither flag
+    set the tuple is empty and the check grades chart type and plotted
+    data points alone.
+    """
+
+    fields = []
+    for field in o.chart_fields:
+        if field == "title":
+            if o.chart_grade_title:
+                fields.append(field)
+        elif o.chart_grade_axis_labels:
+            fields.append(field)
+    return tuple(fields)
+
+
+def grades_title_by_similarity(o) -> bool:
+    """Return True when the title must resemble the reference title.
+
+    `chart_title_match_reference` is inert on its own.  Identifying a
+    chart by its title fails a student whose title reads differently, so
+    it must not reach a task that has opted out of grading titles.
+    """
+
+    return bool(o.chart_grade_title and o.chart_title_match_reference)
+
+
 def doc_func(func, num, param):
     """Return parameterized docstring for chart metadata checks."""
 
     o = param.args[0]
-    if o.chart_title_match_reference:
-        return (
-            f"Check that chart title and axis labels on sheet `{o.sheet}` are"
-            " meaningfully similar to the reference workbook."
-        )
-    return (
-        f"Check that the chart on sheet `{o.sheet}` has a descriptive title"
-        " and axis labels similar to the reference workbook."
+    clauses = []
+    if o.chart_grade_title:
+        if o.chart_title_match_reference:
+            clauses.append("has a title similar to the reference workbook")
+        else:
+            clauses.append("has a descriptive title")
+    if o.chart_grade_axis_labels:
+        clauses.append("has axis labels similar to the reference workbook")
+
+    summary = (
+        f"Check that the chart on sheet `{o.sheet}` is the expected chart"
+        " type and plots the expected data"
     )
+    if clauses:
+        summary += ", and " + " and ".join(clauses)
+    return summary + "."
 
 
 def build(the_options):
@@ -242,7 +298,11 @@ def build(the_options):
         @merge_subtests()
         @weighted
         def test_chart_metadata_match_reference(self, options):
-            """Check chart title and axis labels against reference workbook."""
+            """Check chart type and plotted data against reference workbook.
+
+            Title and axis-label wording are graded only when the task
+            sets `chart_grade_title` or `chart_grade_axis_labels`.
+            """
 
             o = options
             sub_file = resolve_submission_file(o)
@@ -287,7 +347,7 @@ def build(the_options):
                             ),
                         )
 
-            if o.chart_title_match_reference:
+            if grades_title_by_similarity(o):
                 matched_charts = _match_reference_to_submission(
                     ref_charts,
                     sub_charts,
@@ -308,11 +368,14 @@ def build(the_options):
             for ref_chart, sub_chart in matched_charts:
                 # --- structural checks (always enforced) ---
                 with self.subTest(chart=sub_chart.get("chart_file"), field="chart_type"):
+                    # 3-D variants count as their 2-D type, so a student who
+                    # picked a 3-D bar chart is not failed for the styling.
+                    # The message quotes the types as written in the files.
                     ref_types = sorted(ref_chart.get("types", []))
                     sub_types = sorted(sub_chart.get("types", []))
                     self.assertEqual(
-                        ref_types,
-                        sub_types,
+                        normalized_chart_types(ref_chart),
+                        normalized_chart_types(sub_chart),
                         msg=(
                             "\n\nHint:\n"
                             + self.wrapper.fill(
@@ -364,8 +427,8 @@ def build(the_options):
                             ),
                         )
 
-                # --- metadata checks (controlled by o.chart_fields) ---
-                for field in o.chart_fields:
+                # --- metadata checks (opt-in; see graded_metadata_fields) ---
+                for field in graded_metadata_fields(o):
                     with self.subTest(chart=sub_chart.get("chart_file"), field=field):
                         expected = ref_chart.get(field)
                         actual = sub_chart.get(field)
@@ -395,7 +458,7 @@ def build(the_options):
                         # graded on presence, not on similarity to the
                         # reference, unless the check opts in to strict
                         # title matching.
-                        if is_title and not o.chart_title_match_reference:
+                        if is_title and not grades_title_by_similarity(o):
                             continue
 
                         if not is_title:
