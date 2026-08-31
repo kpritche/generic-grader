@@ -84,12 +84,30 @@ def glob_ci(pattern: str) -> list[str]:
 # a name colliding with the grader's own is not a name the student can
 # be told to look for anyway, and hiding one entry is far less confusing
 # than listing the whole grader.
+#
+# The runtime names below are every file tracked in 13100_content's
+# grader/ directory, which its run_autograder copies wholesale into the
+# grading directory ("cp -a .../grader/. /autograder/source/", then "cd
+# /autograder/source").  SIBLING LIST: that same run_autograder keeps a
+# collision list of these names in its step 8.  The two lists have
+# already drifted apart once.  Deriving this set across repositories is
+# not possible from here, so when either list changes, change both.
 GRADER_INFRASTRUCTURE_NAMES = frozenset(
     {
-        "run_autograder",
-        "run_tests.py",
+        # Tracked in 13100_content grader/ and copied into the cwd.
+        "CREATE_AN_AUTOGRADER.md",
+        "README.md",
+        "assignment_mapping.json",
         "post.py",
+        "run_autograder",
+        "run_local.py",
+        "run_tests.py",
         "setup.sh",
+        "test_post.py",
+        # Named in run_autograder's step-8 collision list, and written
+        # beside the grader rather than tracked in grader/.
+        "generate_graders.py",
+        # Written by the grader or the exercise configuration.
         "test_config.py",
         "tests",
         "results",

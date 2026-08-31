@@ -1,11 +1,30 @@
 import pytest
 
 from generic_grader.utils.files import (
+    GRADER_INFRASTRUCTURE_NAMES,
     case_insensitive_pattern,
     describe_submitted_files,
     glob_ci,
     missing_file_message,
     submitted_file_names,
+)
+
+
+# Exactly the nine files "git ls-files grader/" reports in
+# 13100_content, which its run_autograder copies into the grading
+# directory before changing into it.
+GRADER_TRACKED_FILES = frozenset(
+    {
+        "CREATE_AN_AUTOGRADER.md",
+        "README.md",
+        "assignment_mapping.json",
+        "post.py",
+        "run_autograder",
+        "run_local.py",
+        "run_tests.py",
+        "setup.sh",
+        "test_post.py",
+    }
 )
 
 
@@ -96,9 +115,10 @@ def test_submitted_file_names_hides_grader_infrastructure(fix_syspath):
     back to the student as files they uploaded.
     """
 
-    for name in ("run_autograder", "run_tests.py", "post.py", "setup.sh"):
+    for name in GRADER_TRACKED_FILES:
         (fix_syspath / name).write_text("")
-    (fix_syspath / "test_config.py").write_text("")
+    for name in ("generate_graders.py", "test_config.py"):
+        (fix_syspath / name).write_text("")
     for name in ("tests", "results", "__pycache__"):
         (fix_syspath / name).mkdir()
     (fix_syspath / ".gitignore").write_text("")
@@ -115,12 +135,25 @@ def test_submitted_file_names_hides_grader_infrastructure(fix_syspath):
 def test_missing_file_hint_hides_grader_infrastructure(fix_syspath):
     """The hint a student reads names only the student's own files."""
 
-    for name in ("run_autograder", "run_tests.py", "post.py", "setup.sh"):
+    for name in GRADER_TRACKED_FILES:
         (fix_syspath / name).write_text("")
     (fix_syspath / "lab_report.pdf").write_text("")
 
     message = missing_file_message("3.1.2_powerdata_*.xlsx")
     assert "`lab_report.pdf`" in message
-    assert "run_autograder" not in message
-    assert "setup.sh" not in message
-    assert "post.py" not in message
+    for name in GRADER_TRACKED_FILES:
+        assert name not in message
+
+
+def test_every_tracked_grader_file_is_excluded():
+    """The set covers every file the grader copies into the cwd.
+
+    13100_content's run_autograder copies all of grader/ into the
+    grading directory and then works there, so every tracked file in
+    that directory shows up beside the submission.
+    """
+
+    assert GRADER_TRACKED_FILES <= GRADER_INFRASTRUCTURE_NAMES
+    # The sibling collision list in that run_autograder's step 8 names
+    # this one too, though it is not tracked in grader/ itself.
+    assert "generate_graders.py" in GRADER_INFRASTRUCTURE_NAMES
