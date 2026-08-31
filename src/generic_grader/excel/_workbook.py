@@ -91,6 +91,16 @@ NOT_A_WORKBOOK_HINT = (
 )
 
 
+def _has_workbook_part(path: str) -> bool:
+    """Return True when *path* is a zip archive holding a workbook part."""
+
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            return "xl/workbook.xml" in archive.namelist()
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
 def open_workbook(path: str, data_only: bool):
     """Open a workbook, or fail with plain language if it is not one.
 
@@ -101,7 +111,17 @@ def open_workbook(path: str, data_only: bool):
 
     try:
         return load_workbook(filename=path, data_only=data_only)
-    except (zipfile.BadZipFile, InvalidFileException, KeyError):
+    except (zipfile.BadZipFile, InvalidFileException):
+        fail_student(f"The file `{Path(path).name}` {NOT_A_WORKBOOK_HINT}")
+    except KeyError:
+        # openpyxl raises KeyError from the zip archive when a package
+        # part it needs is not there, which is what a zip that is not a
+        # workbook looks like.  A KeyError raised anywhere else inside
+        # openpyxl is a grader fault, and telling a student their file
+        # could not be opened would blame them for it, so only a file
+        # that genuinely lacks the workbook part is reported that way.
+        if _has_workbook_part(path):
+            raise
         fail_student(f"The file `{Path(path).name}` {NOT_A_WORKBOOK_HINT}")
 
 

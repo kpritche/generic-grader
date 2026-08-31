@@ -12,6 +12,7 @@ from generic_grader.excel._workbook import (
     get_formula_text,
     is_formula_value,
     load_sheet,
+    open_workbook,
     resolve_module_workbook,
     resolve_sheet_name,
     resolve_submission_file,
@@ -236,3 +237,42 @@ def test_extract_chart_info_missing_sheet_gives_a_hint(fix_syspath):
     message = " ".join(str(exc_info.value).split())
     assert "`Beam Data`" in message
     assert "`Summary`" in message
+
+
+def test_open_workbook_reraises_a_grader_internal_key_error(fix_syspath, monkeypatch):
+    """A grader fault must not be reported as the student's bad upload.
+
+    openpyxl raises KeyError for a package part that is not in the
+    archive, which is a bad upload.  A KeyError from anywhere else is
+    the grader's problem and has to keep its traceback.
+    """
+
+    path = fix_syspath / "submission.xlsx"
+    _write_workbook(path)
+
+    def explode(*args, **kwargs):
+        raise KeyError("some grader-internal lookup")
+
+    monkeypatch.setattr(
+        "generic_grader.excel._workbook.load_workbook", explode
+    )
+
+    with pytest.raises(KeyError) as exc_info:
+        open_workbook(str(path), data_only=True)
+
+    assert "grader-internal lookup" in str(exc_info.value)
+
+
+def test_open_workbook_reports_a_zip_with_no_workbook_part(fix_syspath):
+    """A zip that is not a workbook is still the student's bad upload."""
+
+    path = fix_syspath / "submission.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("hello.txt", "not a workbook")
+
+    with pytest.raises(AssertionError) as exc_info:
+        open_workbook(str(path), data_only=True)
+
+    assert "could not be opened as an Excel workbook" in " ".join(
+        str(exc_info.value).split()
+    )
