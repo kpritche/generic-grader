@@ -105,6 +105,46 @@ def open_workbook(path: str, data_only: bool):
         fail_student(f"The file `{Path(path).name}` {NOT_A_WORKBOOK_HINT}")
 
 
+def resolve_sheet_name(sheet_names, sheet: str) -> str | None:
+    """Return the sheet in *sheet_names* that *sheet* names, or None.
+
+    An exact match wins.  Failing that, the comparison ignores the case
+    of letters and any surrounding whitespace, so renaming "Beam Data"
+    to "Beam data" does not stop every check that reads the sheet.
+    """
+
+    names = list(sheet_names)
+    if sheet in names:
+        return sheet
+
+    wanted = sheet.strip().casefold()
+    for name in names:
+        if name.strip().casefold() == wanted:
+            return name
+    return None
+
+
+def missing_sheet_message(sheet: str, sheet_names) -> str:
+    """Return the feedback for a sheet the workbook does not contain."""
+
+    names = list(sheet_names)
+    if names:
+        quoted = ", ".join(f"`{name}`" for name in names)
+        plural = "sheets" if len(names) > 1 else "sheet"
+        found = f"  The {plural} in your workbook: {quoted}."
+    else:
+        found = "  Your workbook does not appear to contain any sheets."
+
+    return (
+        f"This check reads the sheet named `{sheet}`, but your workbook"
+        " does not have a sheet with that name."
+        f"{found}"
+        "  Make sure that sheet is still in the workbook and still has"
+        " the name the instructions give it.  Renaming or deleting it"
+        " stops every check that reads it."
+    )
+
+
 def load_sheet(path: str, sheet: str | None, data_only: bool):
     """Load a workbook and return the requested sheet."""
 
@@ -113,7 +153,11 @@ def load_sheet(path: str, sheet: str | None, data_only: bool):
         if not workbook.worksheets:
             raise ValueError(f"Workbook at '{path}' has no worksheets.")
         return workbook.worksheets[0]
-    return workbook[sheet]
+
+    resolved = resolve_sheet_name(workbook.sheetnames, sheet)
+    if resolved is None:
+        fail_student(missing_sheet_message(sheet, workbook.sheetnames))
+    return workbook[resolved]
 
 
 def range_shape(start_cell: str, end_cell: str) -> tuple[int, int]:
@@ -385,9 +429,24 @@ def extract_chart_info_from_workbook(xlsx_filepath: str, sheet: str | None = Non
         workbook_root = ET.fromstring(workbook_xml)
         workbook_relationships = _read_relationships(archive, workbook_path)
 
-        for sheet_node in workbook_root.findall("s:sheets/s:sheet", NS):
+        sheet_nodes = workbook_root.findall("s:sheets/s:sheet", NS)
+        all_sheet_names = [
+            node.get("name") for node in sheet_nodes if node.get("name") is not None
+        ]
+
+        # Resolve the requested sheet to the name the workbook actually
+        # uses.  Skipping past a miscased name would report "no charts
+        # were found", which sends the student looking for a chart that
+        # is there under a sheet name that is not.
+        wanted_sheet = None
+        if sheet:
+            wanted_sheet = resolve_sheet_name(all_sheet_names, sheet)
+            if wanted_sheet is None:
+                fail_student(missing_sheet_message(sheet, all_sheet_names))
+
+        for sheet_node in sheet_nodes:
             sheet_name = sheet_node.get("name")
-            if sheet and sheet_name != sheet:
+            if wanted_sheet is not None and sheet_name != wanted_sheet:
                 continue
 
             rel_id = sheet_node.get(f"{{{NS['r']}}}id")

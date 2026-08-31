@@ -726,3 +726,69 @@ def test_relocation_skipped_below_minimum_length(fix_syspath):
     assert "did not meet the expected" in message
     assert "closest match" not in message
     assert test_method.__score__ == 0
+
+
+def test_case_renamed_sheet_still_passes(fix_syspath):
+    """Renaming "Beam Data" to "Beam data" does not fail the check."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        sheet_name="Beam Data",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        sheet_name="Beam data",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Beam Data",
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_missing_sheet_gives_a_hint_not_a_traceback(fix_syspath):
+    """A deleted sheet is reported as a graded failure with a hint."""
+
+    write_workbook(
+        fix_syspath / "reference.xlsx",
+        sheet_name="Beam Data",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        sheet_name="Summary",
+        cells={"A2": 10, "A3": 20, "A4": 30, "A5": 40},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Beam Data",
+            entries=("A2", "A5"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "`Beam Data`" in message
+    assert "`Summary`" in message
+    assert "does not exist" not in message
+    assert test_method.__score__ == 0

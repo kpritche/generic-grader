@@ -4,6 +4,7 @@ import zipfile
 
 import pytest
 from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
 from openpyxl.worksheet.formula import ArrayFormula
 
 from generic_grader.excel._workbook import (
@@ -12,6 +13,7 @@ from generic_grader.excel._workbook import (
     is_formula_value,
     load_sheet,
     resolve_module_workbook,
+    resolve_sheet_name,
     resolve_submission_file,
 )
 from generic_grader.utils.options import Options
@@ -154,3 +156,83 @@ def test_extract_chart_info_rejects_a_zip_that_is_not_a_workbook(fix_syspath):
     assert "could not be opened as an Excel workbook" in " ".join(
         str(exc_info.value).split()
     )
+
+
+# ---------------------------------------------------------------------------
+# Sheet resolution
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_sheet_name_prefers_an_exact_match():
+    names = ["Beam data", "Beam Data"]
+    assert resolve_sheet_name(names, "Beam Data") == "Beam Data"
+
+
+def test_resolve_sheet_name_ignores_case_and_surrounding_space():
+    names = ["Summary", "Beam data "]
+    assert resolve_sheet_name(names, "Beam Data") == "Beam data "
+
+
+def test_resolve_sheet_name_returns_none_when_absent():
+    assert resolve_sheet_name(["Summary"], "Beam Data") is None
+
+
+def test_load_sheet_accepts_a_case_renamed_sheet(fix_syspath):
+    """Renaming "Beam Data" to "Beam data" no longer breaks the check."""
+
+    path = fix_syspath / "submission.xlsx"
+    _write_workbook(path, sheet_name="Beam data")
+
+    worksheet = load_sheet(str(path), "Beam Data", data_only=True)
+    assert worksheet.title == "Beam data"
+
+
+def test_load_sheet_missing_sheet_gives_a_hint(fix_syspath):
+    """A deleted sheet gives a hint naming what was expected and found."""
+
+    path = fix_syspath / "submission.xlsx"
+    _write_workbook(path, sheet_name="Summary")
+
+    with pytest.raises(AssertionError) as exc_info:
+        load_sheet(str(path), "Beam Data", data_only=True)
+
+    message = " ".join(str(exc_info.value).split())
+    assert "`Beam Data`" in message
+    assert "`Summary`" in message
+    # openpyxl's raw "Worksheet Beam Data does not exist." must not be
+    # what the student sees.
+    assert "does not exist" not in message
+
+
+def test_extract_chart_info_accepts_a_case_renamed_sheet(fix_syspath):
+    """The chart extractor resolves the sheet name the same way."""
+
+    path = fix_syspath / "charts.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Beam data"
+    for row in ([1, 10], [2, 20], [3, 30]):
+        worksheet.append(row)
+    chart = LineChart()
+    chart.title = "Deflection"
+    chart.add_data(Reference(worksheet, min_col=2, min_row=1, max_row=3))
+    worksheet.add_chart(chart, "E2")
+    workbook.save(path)
+
+    charts = extract_chart_info_from_workbook(str(path), sheet="Beam Data")
+    assert len(charts) == 1
+    assert charts[0]["sheet"] == "Beam data"
+
+
+def test_extract_chart_info_missing_sheet_gives_a_hint(fix_syspath):
+    """A missing sheet is reported as such, not as "no charts found"."""
+
+    path = fix_syspath / "charts.xlsx"
+    _write_workbook(path, sheet_name="Summary")
+
+    with pytest.raises(AssertionError) as exc_info:
+        extract_chart_info_from_workbook(str(path), sheet="Beam Data")
+
+    message = " ".join(str(exc_info.value).split())
+    assert "`Beam Data`" in message
+    assert "`Summary`" in message
