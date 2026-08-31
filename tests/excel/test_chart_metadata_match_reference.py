@@ -1127,3 +1127,62 @@ def test_horizontal_bar_passes_axis_grading(fix_syspath):
     test_method()
 
     assert test_method.__score__ == test_method.__weight__
+
+
+def test_missing_chart_fails(fix_syspath):
+    """A sheet with no chart at all still fails, whatever the flags."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Cost by Month",
+                "x_axis_label": "Month",
+                "y_axis_label": "Cost",
+                "kind": "bar",
+            }
+        ],
+    )
+    write_chart_workbook(fix_syspath / "submission.xlsx", chart_specs=[])
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            hint="Build the chart on the data sheet.",
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert "No charts were found in your workbook" in message
+    assert "Build the chart on the data sheet." in message
+    assert test_method.__score__ == 0
+
+
+@pytest.mark.parametrize("kind", ["bar", "bar3d", "line", "scatter"])
+def test_axis_labels_extracted_distinctly_for_every_chart_kind(fix_syspath, kind):
+    """Each chart kind reports its own x and y label, not one twice."""
+
+    path = fix_syspath / f"{kind}.xlsx"
+    write_chart_workbook(
+        path,
+        chart_specs=[
+            {
+                "title": "Sales",
+                "x_axis_label": "Month Index",
+                "y_axis_label": "Revenue Dollars",
+                "kind": None if kind == "line" else kind,
+            }
+        ],
+    )
+
+    charts = extract_chart_info_from_workbook(str(path), sheet="Sheet1")
+    assert charts[0]["x_axis_label"] == "Month Index"
+    assert charts[0]["y_axis_label"] == "Revenue Dollars"
