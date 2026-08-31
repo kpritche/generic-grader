@@ -94,6 +94,11 @@ class Options:
     series_allow_relocation: bool = True
     chart_ratio: float = 0.9
     chart_fields: tuple = ("title", "x_axis_label", "y_axis_label")
+    # When True, every chart on the sheet must carry a meaningful
+    # title.  Like `chart_title_match_reference`, this flag is inert
+    # unless `chart_grade_title` is also True -- the policy is exactly
+    # two opt-in flags, so no third lever may re-enable title grading on
+    # a task that has opted out.
     chart_require_title: bool = False
     # Chart checks grade three things by default: that the chart exists on
     # the named sheet, that its chart type is correct, and that it plots

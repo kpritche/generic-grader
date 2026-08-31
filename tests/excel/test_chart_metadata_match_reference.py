@@ -769,7 +769,13 @@ def test_fewer_charts_than_reference_fails(fix_syspath):
     assert test_method.__score__ == 0
 
 
-def test_failing_missing_submission_title(fix_syspath):
+def test_require_title_alone_does_not_grade_titles(fix_syspath):
+    """chart_require_title is a third title lever, so it is gated too.
+
+    The policy is exactly two opt-in flags.  Setting this one alone must
+    not re-enable title grading on a task that has opted out.
+    """
+
     write_chart_workbook(
         fix_syspath / "reference.xlsx",
         chart_specs=[
@@ -796,6 +802,47 @@ def test_failing_missing_submission_title(fix_syspath):
             weight=1,
             required_files=("submission.xlsx",),
             sheet="Sheet1",
+            chart_require_title=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_chart_metadata_match_reference_0")
+    test_method = built_instance.test_chart_metadata_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+def test_require_title_with_title_grading_fails_a_blank_title(fix_syspath):
+    """With both flags set, every chart must carry a meaningful title."""
+
+    write_chart_workbook(
+        fix_syspath / "reference.xlsx",
+        chart_specs=[
+            {
+                "title": "Monthly Sales Analysis",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+    write_chart_workbook(
+        fix_syspath / "submission.xlsx",
+        chart_specs=[
+            {
+                "title": "   ",
+                "x_axis_label": "Month",
+                "y_axis_label": "Revenue Dollars",
+            }
+        ],
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            sheet="Sheet1",
+            chart_grade_title=True,
             chart_require_title=True,
             kwargs={"reference_file": "reference.xlsx"},
         )

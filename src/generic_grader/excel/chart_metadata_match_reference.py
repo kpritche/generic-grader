@@ -251,6 +251,18 @@ def graded_metadata_fields(o) -> tuple[str, ...]:
     return tuple(fields)
 
 
+def requires_a_title(o) -> bool:
+    """Return True when every chart on the sheet must carry a title.
+
+    `chart_require_title` is a third way to grade a title, so it is
+    gated the same way `chart_title_match_reference` is: the policy is
+    exactly two opt-in flags, and a task that has not set
+    `chart_grade_title` grades nothing about titles.
+    """
+
+    return bool(o.chart_grade_title and o.chart_require_title)
+
+
 def grades_title_by_similarity(o) -> bool:
     """Return True when the title must resemble the reference title.
 
@@ -332,7 +344,7 @@ def build(the_options):
                 ),
             )
 
-            if o.chart_require_title:
+            if requires_a_title(o):
                 for chart in sub_charts:
                     with self.subTest(chart=chart.get("chart_file")):
                         self.assertTrue(
