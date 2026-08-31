@@ -162,6 +162,44 @@ cases = [
         "message": '"foo.py" does not meet this exercise\'s file naming requirements',
         "doc_func_test": "Check for submission of required files.",
     },
+    {
+        # A student who renames a file shipped as powerData_template.xlsx
+        # keeps the capital D the template gave them.
+        "present": ("3.1.2_powerData_login.xlsx",),
+        "required": ("3.1.2_powerdata*.xlsx",),
+        "ignored": (),
+        "result": "pass",
+        "message": "Found all required files.",
+        "doc_func_test": "Check for submission of required files.",
+    },
+    {
+        # The deglobbed-name check ignores case too.
+        "present": ("FOO.py",),
+        "required": ("foo*.py",),
+        "ignored": (),
+        "result": AssertionError,
+        "message": "does not meet this exercise's file naming requirements",
+        "doc_func_test": "Check for submission of required files.",
+    },
+    {
+        # Ignored files match without regard to case as well.
+        "present": ("foo_login.py", "FOOT_login.py"),
+        "required": ("foo*.py",),
+        "ignored": ("foot*.py",),
+        "result": "pass",
+        "message": "Found all required files.",
+        "doc_func_test": "Check for submission of required files.",
+    },
+    {
+        # The report went in the workbook slot.  The hint has to name
+        # what was actually received.
+        "present": ("lab_report.pdf", "3.1.2_powerData.xlsx.xlsx"),
+        "required": ("3.1.2_powerdata_*.xlsx",),
+        "ignored": (),
+        "result": AssertionError,
+        "message": "`lab_report.pdf`",
+        "doc_func_test": "Check for submission of required files.",
+    },
 ]
 
 
@@ -200,3 +238,28 @@ def test_file_presence(case_test_method, capsys):
         assert case["message"] in " ".join(str(exc_info.value).split())
         assert test_method.__score__ == 0
     assert test_method.__doc__ == case["doc_func_test"]
+
+
+def test_missing_file_hint_names_received_files_and_mistakes(fix_syspath):
+    """The missing-file hint lists what arrived and the usual causes."""
+
+    (fix_syspath / "lab_report.pdf").write_text("")
+    (fix_syspath / "3.1.2_powerData.xlsx.xlsx").write_text("")
+
+    built_class = build(
+        Options(required_files=("3.1.2_powerdata_*.xlsx",), weight=1)
+    )
+    built_instance = built_class(methodName="test_submitted_files_0")
+    test_method = built_instance.test_submitted_files_0
+
+    with pytest.raises(AssertionError) as exc_info:
+        test_method()
+
+    message = " ".join(str(exc_info.value).split())
+    assert 'matching the pattern "3.1.2_powerdata_*.xlsx"' in message
+    assert "`lab_report.pdf`" in message
+    assert "`3.1.2_powerData.xlsx.xlsx`" in message
+    assert "for a different assignment" in message
+    assert "report" in message
+    assert ".xlsx.xlsx" in message
+    assert test_method.__score__ == 0

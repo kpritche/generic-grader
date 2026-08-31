@@ -1,6 +1,5 @@
 """Test for presence of required files."""
 
-import glob
 import unittest
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
 from generic_grader.utils.docs import get_wrapper
+from generic_grader.utils.files import glob_ci, missing_file_message
 from generic_grader.utils.options import options_to_params
 
 # TODO
@@ -53,13 +53,15 @@ def build(the_options):
 
             ignored_files, errors = [], []
 
-            # Collect a list of files to ignore.
+            # Collect a list of files to ignore.  Matching ignores the
+            # case of letters, the same way the required-files match
+            # below does, so a differently-cased name cannot slip past.
             for file_pattern in o.ignored_files:
-                ignored_files.extend(glob.glob(file_pattern))
+                ignored_files.extend(glob_ci(file_pattern))
 
             for file_pattern in o.required_files:
                 # Create a list of all files matching the pattern.
-                files = glob.glob(file_pattern)
+                files = glob_ci(file_pattern)
 
                 # Remove ignored_files and symlinks from the list.
                 files = [
@@ -70,15 +72,11 @@ def build(the_options):
 
                 match len(files):
                     case 0:  # Can't find a required file
-                        errors.append(
-                            "Cannot find any files"
-                            f' matching the pattern "{file_pattern}".'
-                            "  Make sure that you have included a file"
-                            " with a name matching this pattern in your submission."
-                        )
+                        errors.append(missing_file_message(file_pattern))
                     case 1:  # Found exactly one matching file. This is good.
                         file = files[0]
-                        if file == file_pattern.replace("*", ""):  # Missing "_login"
+                        deglobbed = file_pattern.replace("*", "")
+                        if file.casefold() == deglobbed.casefold():  # Missing "_login"
                             errors.append(
                                 f'The file "{file}" does not meet'
                                 + " this exercise's file naming requirements."

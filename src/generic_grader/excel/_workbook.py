@@ -1,6 +1,5 @@
 """Shared workbook helpers for excel checks."""
 
-import glob
 import posixpath
 import re
 import xml.etree.ElementTree as ET
@@ -8,8 +7,11 @@ import zipfile
 from pathlib import Path
 
 from openpyxl.utils.cell import range_boundaries
+from openpyxl.utils.exceptions import InvalidFileException
 from rapidfuzz.distance.Levenshtein import normalized_similarity
 
+from generic_grader.utils.docs import get_wrapper
+from generic_grader.utils.files import glob_ci, missing_file_message
 from generic_grader.utils.options import Options
 
 from openpyxl import load_workbook
@@ -25,6 +27,24 @@ NS = {
 }
 
 
+def _hint(message: str) -> str:
+    """Format *message* the way every check formats student feedback."""
+
+    return "\n\nHint:\n" + get_wrapper().fill(message)
+
+
+def fail_student(message: str):
+    """Raise a graded failure carrying plain-language feedback.
+
+    A grader-internal exception reaches the student as a traceback with
+    no explanation of what to fix.  AssertionError is what unittest
+    counts as a failed check, so a helper that raises one lets a
+    resolution problem be reported the way an assertion failure is.
+    """
+
+    raise AssertionError(_hint(message))
+
+
 def resolve_single_file(file_patterns: tuple[str, ...], label: str) -> str:
     """Resolve exactly one file from a tuple of file patterns."""
 
@@ -32,9 +52,11 @@ def resolve_single_file(file_patterns: tuple[str, ...], label: str) -> str:
         raise ValueError(f"No {label} file pattern provided.")
 
     pattern = file_patterns[0]
-    matches = glob.glob(pattern)
+    matches = glob_ci(pattern)
 
     if len(matches) == 0:
+        if label == "submission":
+            fail_student(missing_file_message(pattern))
         raise FileNotFoundError(
             f'Could not find a {label} file matching pattern "{pattern}".'
         )
@@ -61,10 +83,32 @@ def resolve_sheet_and_range(options):
     return sheet, start_cell, end_cell
 
 
+NOT_A_WORKBOOK_HINT = (
+    "could not be opened as an Excel workbook.  Make sure you upload a"
+    " .xlsx workbook.  In Excel, use File > Save As and choose Excel"
+    " Workbook (.xlsx).  An older .xls file, a PDF or document renamed"
+    " to .xlsx, and a CSV will not open, even when the name looks right."
+)
+
+
+def open_workbook(path: str, data_only: bool):
+    """Open a workbook, or fail with plain language if it is not one.
+
+    openpyxl reports an ``.xls`` upload as ``InvalidFileException`` and a
+    renamed PDF as ``BadZipFile: File is not a zip file``.  Neither tells
+    a student what to do, and both reach the student as a traceback.
+    """
+
+    try:
+        return load_workbook(filename=path, data_only=data_only)
+    except (zipfile.BadZipFile, InvalidFileException, KeyError):
+        fail_student(f"The file `{Path(path).name}` {NOT_A_WORKBOOK_HINT}")
+
+
 def load_sheet(path: str, sheet: str | None, data_only: bool):
     """Load a workbook and return the requested sheet."""
 
-    workbook = load_workbook(filename=path, data_only=data_only)
+    workbook = open_workbook(path, data_only=data_only)
     if not sheet:
         if not workbook.worksheets:
             raise ValueError(f"Workbook at '{path}' has no worksheets.")
@@ -326,8 +370,17 @@ def extract_chart_info_from_workbook(xlsx_filepath: str, sheet: str | None = Non
     """Extract chart metadata from workbook XML for one sheet or all sheets."""
 
     workbook_chart_info = []
-    with zipfile.ZipFile(xlsx_filepath, "r") as archive:
+    try:
+        archive = zipfile.ZipFile(xlsx_filepath, "r")
+    except (zipfile.BadZipFile, OSError):
+        fail_student(f"The file `{Path(xlsx_filepath).name}` {NOT_A_WORKBOOK_HINT}")
+
+    with archive:
         workbook_path = "xl/workbook.xml"
+        if workbook_path not in archive.namelist():
+            fail_student(
+                f"The file `{Path(xlsx_filepath).name}` {NOT_A_WORKBOOK_HINT}"
+            )
         workbook_xml = archive.read(workbook_path)
         workbook_root = ET.fromstring(workbook_xml)
         workbook_relationships = _read_relationships(archive, workbook_path)
@@ -388,11 +441,13 @@ def _resolve_from_patterns(patterns: tuple[str, ...], label: str) -> str:
 
     matches = []
     for pattern in patterns:
-        matches.extend(glob.glob(pattern))
+        matches.extend(glob_ci(pattern))
 
     matches = list(dict.fromkeys(matches))
 
     if len(matches) == 0:
+        if label == "submission":
+            fail_student(missing_file_message(patterns[0]))
         pattern_str = '", "'.join(patterns)
         raise FileNotFoundError(
             f'Could not find a {label} file matching any pattern in ("{pattern_str}").'
@@ -451,16 +506,22 @@ def resolve_module_workbook(module: str, label: str) -> str:
         f"{module.replace('.', str(Path('/')))}.xlsx",
     ]
 
+    # Match candidates without regard to the case of letters, so a
+    # workbook saved as Report.XLSX resolves the same as report.xlsx.
     existing_paths = {}
     for candidate in candidate_paths:
-        candidate_path = Path(candidate)
-        if candidate_path.is_file():
+        for match in glob_ci(candidate):
+            candidate_path = Path(match)
+            if not candidate_path.is_file():
+                continue
             normalized = str(candidate_path.resolve())
             existing_paths[normalized] = str(candidate_path)
 
     existing_paths = list(existing_paths.values())
 
     if len(existing_paths) == 0:
+        if label == "submission":
+            fail_student(missing_file_message(candidate_paths[1]))
         candidate_str = '", "'.join(candidate_paths)
         raise FileNotFoundError(
             f'Could not find a {label} file from module "{module}".'

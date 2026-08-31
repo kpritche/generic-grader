@@ -1,8 +1,9 @@
-import glob
 import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+
+from generic_grader.utils.files import glob_ci
 
 
 @contextmanager
@@ -22,7 +23,7 @@ def file_set_up(options):
         if "*" not in file_pattern:  # dst will already exist
             continue
 
-        files = glob.glob(file_pattern)
+        files = glob_ci(file_pattern)
         files = [file for file in files if file not in o.ignored_files]
 
         if len(files) != 1:  # src missing or ambiguous
