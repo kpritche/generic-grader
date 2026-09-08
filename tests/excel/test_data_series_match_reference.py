@@ -994,3 +994,139 @@ def test_formulas_lack_cached_values_helper(fix_syspath):
     typed = fix_syspath / "typed.xlsx"
     write_workbook(typed, cells={"A2": 10})
     assert formulas_lack_cached_values(str(typed), "Sheet1") is False
+
+
+# Units are prose, and students spell the same unit several ways.  These
+# cover `series_canonicalize_units`, which compares string cells by their
+# canonical unit instead of by exact text.  See ENGR 131 task 6.1.2, whose
+# Table 2 Units column holds "%/year", "%", and "unitless".
+UNIT_REFERENCE = {"F11": "%/year", "F12": "%", "F13": "unitless"}
+
+
+@pytest.mark.parametrize(
+    "submitted",
+    [
+        {"F11": "%/year", "F12": "%", "F13": "unitless"},
+        {"F11": "percent per year", "F12": "percent", "F13": "unitless"},
+        {"F11": "Percentage/yr", "F12": "Percentage", "F13": "Unitless"},
+        {"F11": "per cent per year", "F12": "PER CENT", "F13": "unitless"},
+        {"F11": "pct/year", "F12": " pct ", "F13": "unitless"},
+    ],
+)
+def test_passing_canonicalized_units(fix_syspath, submitted):
+    write_workbook(fix_syspath / "reference.xlsx", cells=UNIT_REFERENCE)
+    write_workbook(fix_syspath / "submission.xlsx", cells=submitted)
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+@pytest.mark.parametrize(
+    "submitted",
+    [
+        # A different unit, not a different spelling of the same one.
+        {"F11": "%/day", "F12": "%", "F13": "unitless"},
+        # The unit is missing where the reference has one.
+        {"F11": "%/year", "F12": None, "F13": "unitless"},
+    ],
+)
+def test_failing_canonicalized_units(fix_syspath, submitted):
+    write_workbook(fix_syspath / "reference.xlsx", cells=UNIT_REFERENCE)
+    write_workbook(fix_syspath / "submission.xlsx", cells=submitted)
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError):
+        test_method()
+
+    assert test_method.__score__ == 0
+
+
+def test_canonicalized_units_is_opt_in(fix_syspath):
+    """Without the flag, a spelling variant still fails."""
+
+    write_workbook(fix_syspath / "reference.xlsx", cells=UNIT_REFERENCE)
+    write_workbook(
+        fix_syspath / "submission.xlsx",
+        cells={"F11": "percent per year", "F12": "percent", "F13": "unitless"},
+    )
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError):
+        test_method()
+
+    assert test_method.__score__ == 0
+
+
+def test_canonicalized_units_leaves_numbers_alone(fix_syspath):
+    """The flag must not loosen a numeric comparison."""
+
+    write_workbook(fix_syspath / "reference.xlsx", cells={"A2": 10, "A3": 20})
+    write_workbook(fix_syspath / "submission.xlsx", cells={"A2": 10, "A3": 21})
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("A2", "A3"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError):
+        test_method()
+
+    assert test_method.__score__ == 0
+
+
+def test_doc_func_canonicalized_units():
+    built_class = build(
+        Options(
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class()
+
+    assert built_instance.test_data_series_match_reference_0.__doc__ == (
+        "Check that the data series in range F11:F13 on sheet"
+        " `<first worksheet>` exactly matches the reference values,"
+        " comparing units by meaning rather than spelling."
+    )

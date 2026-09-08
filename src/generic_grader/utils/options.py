@@ -87,6 +87,12 @@ class Options:
     sheet: str = ""
     range_matches_reference: bool = True
     series_require_formulas: bool = False
+    # Compare string cells by canonical unit rather than by exact text, so
+    # that "%", "percent", "per cent", and "percentage" all match one
+    # reference spelling.  Numeric cells are unaffected.  Turn this on only
+    # for a range whose cells hold units, never for a range whose cells hold
+    # a graded word such as Yes or No.
+    series_canonicalize_units: bool = False
     # When a same-location series check fails, search the sheet for the
     # intact series (same orientation, at least 3 values) and award credit
     # if it is found and satisfies the same formula requirement.  Set False

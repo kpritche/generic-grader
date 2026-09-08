@@ -35,6 +35,8 @@ def doc_func(func, num, param):
     require_formulas = o.series_require_formulas
     range_matches_reference = o.range_matches_reference
     formula_suffix = " and uses formulas" if require_formulas else ""
+    if o.series_canonicalize_units:
+        formula_suffix += ", comparing units by meaning rather than spelling"
     if range_matches_reference:
         # With relocation enabled a shifted-but-intact series can still earn
         # credit, so the title must not promise a same-cell requirement.
@@ -100,6 +102,7 @@ def build(the_options):
             series = extract_series_from_range(ref_sheet, start_cell, end_cell)
             search_orientation = o.kwargs.get("search_orientation", "either")
             require_formulas = o.series_require_formulas
+            canonicalize_units = o.series_canonicalize_units
             range_matches_reference = o.range_matches_reference
 
             if require_formulas and all(value is None for value in series["values"]):
@@ -132,6 +135,7 @@ def build(the_options):
                     series["values"],
                     o.relative_tolerance,
                     o.absolute_tolerance,
+                    canonicalize_units,
                 )
 
                 sub_sheet_formulas = None
@@ -182,6 +186,7 @@ def build(the_options):
                             o.relative_tolerance,
                             o.absolute_tolerance,
                             o.ratio,
+                            canonicalize_units,
                         )
                         if not window_is_aligned(window)
                     ]
@@ -221,6 +226,7 @@ def build(the_options):
                                 series["orientation"],
                                 o.relative_tolerance,
                                 o.absolute_tolerance,
+                                canonicalize_units,
                             )
                             if (
                                 best is not None
@@ -272,6 +278,7 @@ def build(the_options):
                     search_orientation,
                     o.relative_tolerance,
                     o.absolute_tolerance,
+                    canonicalize_units,
                 )
 
                 if exact_match is None:
@@ -281,6 +288,7 @@ def build(the_options):
                         search_orientation,
                         o.relative_tolerance,
                         o.absolute_tolerance,
+                        canonicalize_units,
                     )
 
                     # Same diagnosis as the aligned branch, but the series

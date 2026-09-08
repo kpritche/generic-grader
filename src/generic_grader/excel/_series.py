@@ -4,6 +4,8 @@ from math import isclose
 
 from openpyxl.utils.cell import get_column_letter, range_boundaries
 
+from generic_grader.excel._units import canonicalize_label
+
 
 def _normalize_value(value):
     if isinstance(value, str):
@@ -11,12 +13,24 @@ def _normalize_value(value):
     return value
 
 
-def _values_match(a, b, relative_tolerance: float, absolute_tolerance: float) -> bool:
+def _values_match(
+    a,
+    b,
+    relative_tolerance: float,
+    absolute_tolerance: float,
+    canonicalize_units: bool = False,
+) -> bool:
     a_value = _normalize_value(a)
     b_value = _normalize_value(b)
 
     if isinstance(a_value, bool) or isinstance(b_value, bool):
         return a_value == b_value
+
+    # A cell holding a unit is prose, and students spell the same unit
+    # several ways.  Comparing the canonical form lets "%", "percent",
+    # "per cent", and "percentage" all match one reference spelling.
+    if canonicalize_units and isinstance(a_value, str) and isinstance(b_value, str):
+        return canonicalize_label(a_value) == canonicalize_label(b_value)
 
     if isinstance(a_value, (int, float)) and isinstance(b_value, (int, float)):
         return isclose(
@@ -34,6 +48,7 @@ def _series_ratio(
     target: list,
     relative_tolerance: float,
     absolute_tolerance: float,
+    canonicalize_units: bool = False,
 ) -> float:
     if len(candidate) != len(target):
         return 0.0
@@ -42,7 +57,7 @@ def _series_ratio(
         return 1.0
 
     n_matches = sum(
-        _values_match(c, t, relative_tolerance, absolute_tolerance)
+        _values_match(c, t, relative_tolerance, absolute_tolerance, canonicalize_units)
         for c, t in zip(candidate, target, strict=True)
     )
     return n_matches / len(target)
@@ -98,6 +113,7 @@ def find_best_series_window(
     search_orientation: str,
     relative_tolerance: float,
     absolute_tolerance: float,
+    canonicalize_units: bool = False,
 ):
     """Return the best matching row/column window for target values."""
 
@@ -124,6 +140,7 @@ def find_best_series_window(
                     target,
                     relative_tolerance,
                     absolute_tolerance,
+                    canonicalize_units,
                 )
                 if ratio > best_ratio:
                     best_ratio = ratio
@@ -143,6 +160,7 @@ def find_best_series_window(
                     target,
                     relative_tolerance,
                     absolute_tolerance,
+                    canonicalize_units,
                 )
                 if ratio > best_ratio:
                     best_ratio = ratio
@@ -163,6 +181,7 @@ def find_series_windows(
     relative_tolerance: float,
     absolute_tolerance: float,
     min_ratio: float,
+    canonicalize_units: bool = False,
 ):
     """Return every row/column window whose match ratio is at least min_ratio.
 
@@ -192,6 +211,7 @@ def find_series_windows(
                     target,
                     relative_tolerance,
                     absolute_tolerance,
+                    canonicalize_units,
                 )
                 if ratio >= min_ratio:
                     windows.append(
@@ -212,6 +232,7 @@ def find_series_windows(
                     target,
                     relative_tolerance,
                     absolute_tolerance,
+                    canonicalize_units,
                 )
                 if ratio >= min_ratio:
                     windows.append(
@@ -233,6 +254,7 @@ def find_exact_series_window(
     search_orientation: str,
     relative_tolerance: float,
     absolute_tolerance: float,
+    canonicalize_units: bool = False,
 ):
     """Return a matching row/column window only when all values match."""
 
@@ -242,6 +264,7 @@ def find_exact_series_window(
         search_orientation,
         relative_tolerance,
         absolute_tolerance,
+        canonicalize_units,
     )
     if best is None:
         return None
