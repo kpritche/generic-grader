@@ -4,7 +4,7 @@ from math import isclose
 
 from openpyxl.utils.cell import get_column_letter, range_boundaries
 
-from generic_grader.excel._units import canonicalize_label
+from generic_grader.excel._units import DIMENSIONLESS, canonicalize_label, unit_tokens
 
 
 def _normalize_value(value):
@@ -26,11 +26,26 @@ def _values_match(
     if isinstance(a_value, bool) or isinstance(b_value, bool):
         return a_value == b_value
 
-    # A cell holding a unit is prose, and students spell the same unit
-    # several ways.  Comparing the canonical form lets "%", "percent",
-    # "per cent", and "percentage" all match one reference spelling.
-    if canonicalize_units and isinstance(a_value, str) and isinstance(b_value, str):
-        return canonicalize_label(a_value) == canonicalize_label(b_value)
+    # A units cell is prose.  Compare the units it names rather than its
+    # text, so neither the spelling of a unit nor the description a student
+    # wraps around it decides the grade: "%", "percent", and "percent of
+    # households" all name the same unit.  A blank cell is how a student
+    # writes "this quantity has no unit", so it counts against a
+    # dimensionless reference and against nothing else.
+    if canonicalize_units and isinstance(b_value, str):
+        reference_units = unit_tokens(b_value)
+
+        if a_value is None or (isinstance(a_value, str) and not a_value):
+            return reference_units == [DIMENSIONLESS]
+
+        if isinstance(a_value, str):
+            submitted_units = unit_tokens(a_value)
+            # Neither side names a unit, so there is nothing to compare by
+            # meaning.  Fall back to the canonical text rather than calling
+            # two unrelated descriptions equal.
+            if not reference_units and not submitted_units:
+                return canonicalize_label(a_value) == canonicalize_label(b_value)
+            return submitted_units == reference_units
 
     if isinstance(a_value, (int, float)) and isinstance(b_value, (int, float)):
         return isclose(

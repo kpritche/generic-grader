@@ -1,6 +1,6 @@
 import pytest
 
-from generic_grader.excel._units import canonicalize_label, label_unit
+from generic_grader.excel._units import DIMENSIONLESS, canonicalize_label, label_unit, unit_tokens
 
 # Axis labels taken from the ENGR 131 reference workbooks, each paired with
 # spellings a student is likely to write for the same axis.
@@ -166,3 +166,35 @@ def test_empty_labels(label):
 )
 def test_label_unit(label, expected):
     assert label_unit(label) == expected
+
+
+@pytest.mark.parametrize(
+    "label, expected",
+    [
+        # Description wrapped around a unit is dropped.
+        ("percent", ["percent"]),
+        ("percent of households", ["percent"]),
+        ("% of households", ["percent"]),
+        ("Percentage of Households", ["percent"]),
+        ("percent/year", ["percent", "per", "yr"]),
+        ("percent of households per year", ["percent", "per", "yr"]),
+        # Misspellings students actually write.
+        ("percet of households", ["percent"]),
+        ("precent", ["percent"]),
+        # Dimensionless.
+        ("unitless", [DIMENSIONLESS]),
+        ("N/A", [DIMENSIONLESS]),
+        ("no units", [DIMENSIONLESS]),
+        # Naming no unit at all.
+        ("of households", []),
+        ("", []),
+        (None, []),
+    ],
+)
+def test_unit_tokens(label, expected):
+    assert unit_tokens(label) == expected
+
+
+def test_unit_tokens_separates_different_units():
+    assert unit_tokens("%/day") != unit_tokens("%/year")
+    assert unit_tokens("meters") != unit_tokens("percent")

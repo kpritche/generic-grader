@@ -82,7 +82,10 @@ _UNIT_ALIASES = {
     "l": ("liter", "litre"),
     "ml": ("milliliter", "millilitre"),
     "gal": ("gallon",),
-    "percent": ("pct", "percentage"),
+    # "percet" and "precent" are the two misspellings that actually turn up.
+    # A units cell measures whether the student knows the unit, not how they
+    # spell it.  This is a short explicit list, not fuzzy matching.
+    "percent": ("pct", "percentage", "percet", "precent"),
     "rpm": (),
     "rad": ("radian",),
     # A dimensionless quantity has no unit, and a reference workbook still
@@ -215,6 +218,28 @@ def _parse_label(text: str | None) -> tuple[list[str], list[str] | None]:
     quantity.extend(_canonicalize_tokens(_tokens(text[cursor:])))
 
     return quantity, unit
+
+
+# The canonical form every way of writing "this quantity has no unit"
+# collapses to.  Callers compare against this rather than the literal word.
+DIMENSIONLESS = "unitless"
+
+
+def unit_tokens(text: str | None) -> list[str]:
+    """Return only the unit tokens in a label, in the order they appear.
+
+    Everything that is not a recognized unit is dropped, so the descriptive
+    words a student wraps around a unit stop mattering:
+    ``percent of households`` and ``percent`` both give ``["percent"]``,
+    while ``percent of households per year`` gives
+    ``["percent", "per", "yr"]``.  A label naming no unit gives ``[]``, so
+    an answer that is only description still fails against a reference that
+    names one.
+    """
+
+    quantity, unit = _parse_label(text)
+    tokens = list(quantity) + list(unit or [])
+    return [token for token in tokens if _is_unit_token(token)]
 
 
 def canonicalize_label(text: str | None) -> str:

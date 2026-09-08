@@ -1130,3 +1130,96 @@ def test_doc_func_canonicalized_units():
         " `<first worksheet>` exactly matches the reference values,"
         " comparing units by meaning rather than spelling."
     )
+
+
+@pytest.mark.parametrize(
+    "submitted",
+    [
+        # Description wrapped around the unit, which students write when the
+        # units column sits next to a named quantity.
+        {"F11": "percent of households per year", "F12": "percent of households", "F13": "unitless"},
+        {"F11": "% of households/year", "F12": "% of households", "F13": "N/A"},
+        {"F11": "Percentage of Households per Year", "F12": "Percet of Households", "F13": "none"},
+        # A blank cell is how a student writes "this quantity has no unit".
+        {"F11": "%/year", "F12": "%", "F13": None},
+        {"F11": "%/year", "F12": "%", "F13": "   "},
+    ],
+)
+def test_passing_units_ignore_description_and_blank_dimensionless(fix_syspath, submitted):
+    write_workbook(fix_syspath / "reference.xlsx", cells=UNIT_REFERENCE)
+    write_workbook(fix_syspath / "submission.xlsx", cells=submitted)
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+    test_method()
+
+    assert test_method.__score__ == test_method.__weight__
+
+
+@pytest.mark.parametrize(
+    "submitted",
+    [
+        # Blank only counts where the reference names no unit.  These two
+        # cells do name one.
+        {"F11": None, "F12": "%", "F13": "unitless"},
+        {"F11": "%/year", "F12": "", "F13": "unitless"},
+        # Description alone names no unit.
+        {"F11": "%/year", "F12": "of households", "F13": "unitless"},
+        # A different unit still fails, description or not.
+        {"F11": "% of households/day", "F12": "%", "F13": "unitless"},
+        {"F11": "%/year", "F12": "kg of households", "F13": "unitless"},
+    ],
+)
+def test_failing_units_blank_or_wrong_unit(fix_syspath, submitted):
+    write_workbook(fix_syspath / "reference.xlsx", cells=UNIT_REFERENCE)
+    write_workbook(fix_syspath / "submission.xlsx", cells=submitted)
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F11", "F13"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError):
+        test_method()
+
+    assert test_method.__score__ == 0
+
+
+def test_blank_does_not_pass_a_graded_word(fix_syspath):
+    """A blank cell must not match a Yes/No answer, only a dimensionless unit."""
+
+    write_workbook(fix_syspath / "reference.xlsx", cells={"F17": "Yes", "F18": "No"})
+    write_workbook(fix_syspath / "submission.xlsx", cells={"F17": None, "F18": "No"})
+
+    built_class = build(
+        Options(
+            weight=1,
+            required_files=("submission.xlsx",),
+            entries=("F17", "F18"),
+            series_canonicalize_units=True,
+            kwargs={"reference_file": "reference.xlsx"},
+        )
+    )
+    built_instance = built_class(methodName="test_data_series_match_reference_0")
+    test_method = built_instance.test_data_series_match_reference_0
+
+    with pytest.raises(AssertionError):
+        test_method()
+
+    assert test_method.__score__ == 0

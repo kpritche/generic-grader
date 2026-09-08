@@ -87,11 +87,19 @@ class Options:
     sheet: str = ""
     range_matches_reference: bool = True
     series_require_formulas: bool = False
-    # Compare string cells by canonical unit rather than by exact text, so
-    # that "%", "percent", "per cent", and "percentage" all match one
-    # reference spelling.  Numeric cells are unaffected.  Turn this on only
-    # for a range whose cells hold units, never for a range whose cells hold
-    # a graded word such as Yes or No.
+    # Compare string cells by the units they name rather than by their text.
+    # Spelling stops mattering, so "%", "percent", "per cent" and
+    # "percentage" are one answer; so does any description wrapped around
+    # the unit, so "percent of households" names the same unit as
+    # "percent".  A blank cell reads as "this quantity has no unit" and
+    # matches a dimensionless reference, and nothing else.  A different
+    # unit still fails.  Numeric cells are unaffected.
+    #
+    # Turn this on only for a range whose cells hold units.  Never turn it
+    # on for a range holding a graded word such as Yes or No: against a
+    # reference that names no unit the comparison falls back to canonical
+    # text, but a blank answer would still be scored on unit rules rather
+    # than on the word the task asked for.
     series_canonicalize_units: bool = False
     # When a same-location series check fails, search the sheet for the
     # intact series (same orientation, at least 3 values) and award credit
