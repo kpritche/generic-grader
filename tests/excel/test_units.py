@@ -53,6 +53,38 @@ EQUIVALENT_LABELS = [
         "Area (m2)",
         ["Area (square meters)", "Area (m²)", "Area (sq m)"],
     ),
+    (
+        "Households (%)",
+        [
+            "Households (percent)",
+            "Households (Percent)",
+            "Households (percentage)",
+            "Households (Percentages)",
+            "Households (per cent)",
+            "Households (PER CENT)",
+            "Households (pct)",
+        ],
+    ),
+    (
+        "Adoption Rate (%/year)",
+        [
+            "Adoption Rate (percent per year)",
+            "Adoption Rate (percentage/yr)",
+            "Adoption Rate (per cent per year)",
+        ],
+    ),
+    (
+        "Coefficient of Determination (unitless)",
+        [
+            "Coefficient of Determination (Unitless)",
+            "Coefficient of Determination (dimensionless)",
+            "Coefficient of Determination (none)",
+            "Coefficient of Determination (N/A)",
+            "Coefficient of Determination (n/a)",
+            "Coefficient of Determination (no units)",
+            "Coefficient of Determination (no unit)",
+        ],
+    ),
 ]
 
 
@@ -73,6 +105,10 @@ def test_unit_spellings_compare_equal(reference, variant):
         ("Material Type", "material type"),
         ("Day", "d"),
         ("Water Consumed [m3/d]", "water consumed m3 per d"),
+        ("Percentage", "percent"),
+        ("Per Cent", "percent"),
+        ("N/A", "unitless"),
+        ("No Units", "unitless"),
     ],
 )
 def test_canonical_form(label, expected):
@@ -86,6 +122,10 @@ def test_canonical_form(label, expected):
         ("Applied Load (N)", "Applied Load (kN)"),
         ("Energy (kWh)", "Energy (MWh)"),
         ("Temperature (°C)", "Temperature (°F)"),
+        ("Growth (%)", "Growth (%/yr)"),
+        ("Ratio (unitless)", "Ratio (%)"),
+        # "N/A" must not survive as newtons per ampere.
+        ("Current (N/A)", "Current (A)"),
     ],
 )
 def test_different_units_stay_different(left, right):

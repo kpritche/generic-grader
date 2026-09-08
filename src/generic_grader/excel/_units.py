@@ -82,9 +82,13 @@ _UNIT_ALIASES = {
     "l": ("liter", "litre"),
     "ml": ("milliliter", "millilitre"),
     "gal": ("gallon",),
-    "percent": ("pct",),
+    "percent": ("pct", "percentage"),
     "rpm": (),
     "rad": ("radian",),
+    # A dimensionless quantity has no unit, and a reference workbook still
+    # has to write something in the units cell.  Treat the usual ways of
+    # saying "there is no unit here" as one canonical answer.
+    "unitless": ("dimensionless", "none", "na"),
 }
 
 # Pairs of canonical tokens that merge into one unit.
@@ -96,6 +100,12 @@ _PAIR_MERGES = {
     ("w", "h"): "wh",
     ("kw", "h"): "kwh",
     ("mw", "h"): "mwh",
+    # "per cent" survives the alphanumeric filter as two tokens, and the
+    # leading token is the same "per" that a solidus becomes, so it can
+    # only be recognized as a pair.
+    ("per", "cent"): "percent",
+    ("no", "unit"): "unitless",
+    ("no", "units"): "unitless",
 }
 
 # Words that raise a unit to a power when they precede it.
@@ -120,8 +130,13 @@ _TOKEN_MAP = _build_token_map()
 
 _BRACKET_GROUP = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]|\{([^{}]*)\}")
 
+# "N/A" has to be read before the solidus below turns it into "n per a",
+# which the token map would then read as newtons per ampere.
+_NOT_APPLICABLE = re.compile(r"\bn\s*/\s*a\b", re.IGNORECASE)
+
 
 def _tokens(text: str) -> list[str]:
+    text = _NOT_APPLICABLE.sub(" unitless ", text)
     for old, new in _PRE_SUBSTITUTIONS:
         text = text.replace(old, new)
     lowered = text.lower()
