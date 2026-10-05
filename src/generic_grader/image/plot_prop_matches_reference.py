@@ -9,7 +9,7 @@ from parameterized import parameterized
 from rapidfuzz.distance.Levenshtein import normalized_similarity
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str
+from generic_grader.utils.docs import get_wrapper
 from generic_grader.utils.math_utils import calc_log_limit
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.plot import get_property
@@ -23,10 +23,10 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check that the {o.prop} in the plot generated"
-        f" from your `{o.obj_name}` function when called as `{call_str}`"
+        f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " matches the reference."
     )
@@ -70,13 +70,13 @@ def build(the_options):
             mpl.pyplot.close()  # Delete the generated figure.
 
             # Build an error message.
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
             message = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
                     "Your plot did not match the expected plot."
                     f"  Double check the {o.prop} in the plot produced by"
-                    f" your `{o.obj_name}` function when called as `{call_str}`"
+                    f" your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}." or ".")
                     + (
                         o.ratio < 1

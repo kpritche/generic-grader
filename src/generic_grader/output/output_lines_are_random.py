@@ -7,7 +7,7 @@ from attrs import evolve
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import make_call_str, make_line_range
+from generic_grader.utils.docs import make_line_range
 from generic_grader.utils.math_utils import calc_log_limit
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.user import RefUser, SubUser
@@ -19,11 +19,11 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         "Check that the lines of output"
-        + f" from your `{o.sub_module}.{o.obj_name}` function"
-        + f" when called as `{call_str}`"
+        + f" from your `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+        + f" {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " are random."
     )
@@ -70,14 +70,14 @@ def build(the_options):
 
             # Build an error message.
             line_range = make_line_range(o.start, o.n_lines)
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
 
             message = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
                     "Your output does not appear to be random."
                     f"  Double check that the output on {line_range}"
-                    f" of your `{o.obj_name}` function when called as `{call_str}`"
+                    f" of your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}" or "")
                     + " is random."
                     + (o.hint and f"  {o.hint}" or "")

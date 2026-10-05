@@ -5,7 +5,7 @@ import unittest
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str
+from generic_grader.utils.docs import get_wrapper
 from generic_grader.utils.math_utils import n_trials
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.safe_equal import safe_assert_equal
@@ -18,11 +18,11 @@ def doc_func(func, num, param):
     """
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         "Check the lengths of value(s) returned from your"
-        + f" `{o.sub_module}.{o.obj_name}` function"
-        + f" when called as `{call_str}`"
+        + f" `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+        + f" {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " matches the expected lengths."
     )
@@ -52,7 +52,7 @@ def build(the_options):
 
             # Create the student user.
             self.student_user = SubUser(self, o)
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
 
             # Collect the actual set by repeated calls to the function.
             actual_set = set()
@@ -69,7 +69,7 @@ def build(the_options):
                     message = (
                         "\n\nHint:\n"
                         + self.wrapper.fill(
-                            f"Your `{o.sub_module}.{o.obj_name}` function when called as `{call_str}`"
+                            f"Your `{o.sub_module}.{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                             + (o.entries and f" with entries={o.entries}" or "")
                             + " did not return a value that has a length."
                             + " Make sure your function returns a value that supports"
@@ -82,8 +82,8 @@ def build(the_options):
                 "\n\nHint:\n"
                 + self.wrapper.fill(
                     "The lengths of values returned from your"
-                    + f" `{o.sub_module}.{o.obj_name}` function"
-                    + f" when called as `{call_str}`"
+                    + f" `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+                    + f" {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}" or "")
                     + " did not match the expected lengths."
                     + (o.hint and f"  {o.hint}" or "")

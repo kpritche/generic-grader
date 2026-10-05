@@ -7,7 +7,6 @@ from PIL import Image
 from PIL.ImageChops import logical_and
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import make_call_str
 from generic_grader.utils.options import options_to_params
 
 
@@ -16,10 +15,10 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check that the {o.region_inner}"
-        f" from your `{o.obj_name}` function when called as `{call_str}`"
+        f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + f" has {o.mode} {o.threshold} pixels"
         + f" in the {o.region_outer}."

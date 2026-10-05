@@ -7,7 +7,7 @@ import warnings
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str, oxford_list
+from generic_grader.utils.docs import get_wrapper, oxford_list
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.reference_test import reference_test
 
@@ -17,7 +17,7 @@ def doc_func(func, num, param):
     closed."""
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = f"Check that all files are closed after calling `{call_str}`" + (
         o.entries and f" with entries={o.entries}." or "."
     )
@@ -67,12 +67,12 @@ def build(the_options):
 
             file_list_str = "file " if len(unclosed_files) == 1 else "files "
             file_list_str += oxford_list(unclosed_files)
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
             message = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
-                    f"Your `{o.obj_name}` function failed to close the"
-                    f" {file_list_str} when called as `{call_str}`"
+                    f"Your `{o.obj_name}` {o.obj_noun()} failed to close the"
+                    f" {file_list_str} {o.call_phrase()} `{call_str}`"
                     + (f" with entries={o.entries}." if o.entries else ".")
                     + (o.hint if o.hint else "")
                 )

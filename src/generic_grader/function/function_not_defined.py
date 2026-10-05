@@ -41,7 +41,7 @@ def build(the_options):
                 pass  # The expected result.
             else:
                 msg = (
-                    f"The definition of your `{o.obj_name}` function "
+                    f"The definition of your `{o.obj_name}` {o.obj_noun()} "
                     f"should not be within your `{o.sub_module}` module."
                     + (o.hint and f" {o.hint}")
                 )

@@ -6,7 +6,6 @@ import unittest
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import make_call_str
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.static import LoopDepthTracker
 
@@ -16,10 +15,10 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check that the loop depth"
-        f" in your `{o.obj_name}` function when called as `{call_str}`"
+        f" in your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " meets the minimum requirements."
     )
@@ -52,7 +51,7 @@ def build(the_options):
             if expected > 1:
                 message = str(
                     "\nThis assignment requires the use of nested loops,"
-                    f" but your `{o.obj_name}` function's maximum loop depth"
+                    f" but your `{o.obj_name}` {o.obj_noun()}'s maximum loop depth"
                     f" of {actual}, does not meet the assignment's"
                     f" minimum loop depth requirement of {expected}."
                     + (o.hint and f" {o.hint}" or ""),
@@ -60,7 +59,7 @@ def build(the_options):
             else:
                 message = str(
                     "\nThis assignment requires the use of at least one loop,"
-                    f" but your `{o.obj_name}` function doesn't have any loops."
+                    f" but your `{o.obj_name}` {o.obj_noun()} doesn't have any loops."
                     + (o.hint and f" {o.hint}" or ""),
                 )
 

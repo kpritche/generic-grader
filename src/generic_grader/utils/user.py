@@ -6,7 +6,7 @@ from io import StringIO
 
 from attrs import evolve
 
-from generic_grader.utils.docs import get_wrapper, make_call_str, ordinalize
+from generic_grader.utils.docs import get_wrapper, ordinalize
 from generic_grader.utils.exceptions import (
     EndOfInputError,
     ExtraEntriesError,
@@ -240,10 +240,10 @@ class __User__:
             self.log.log_limit = o.log_limit
 
         msg = False
-        call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+        call_str = o.call_str()
         error_msg = "\n" + self.wrapper.fill(
             f"Your `{o.obj_name}` malfunctioned"
-            + f" when called as `{call_str}`"
+            + f" {o.call_phrase()} `{call_str}`"
             + ((o.entries) and f" with entries {o.entries}." or ".")
         )
         try:
