@@ -285,13 +285,39 @@ class __User__:
         return self.returned_values
 
 
+def _backend_class(cls, base, options, role):
+    """Return the class to allocate when `base` is constructed.
+
+    An options type may name an execution backend with a class attribute
+    `user_backend`, an object whose `RefUser` and `SubUser` attributes are
+    subclasses of the classes here.  When it does, constructing the base
+    class allocates the backend's class instead, so every construction site
+    runs the submission through that backend without being edited.  A
+    subclass constructed directly is left alone.
+    """
+    backend = getattr(type(options), "user_backend", None)
+    if backend is not None and cls is base:
+        return getattr(backend, role)
+    return cls
+
+
 class RefUser(__User__):
+    def __new__(cls, test=None, options: Options | None = None):
+        target = _backend_class(cls, RefUser, options, "RefUser")
+        # `object.__new__` takes only the class once `__init__` is overridden.
+        # The arguments default to None so copy and pickle can allocate.
+        return super().__new__(target)
+
     def __init__(self, test, options: Options):
         self.module = options.ref_module
         super().__init__(test, options)
 
 
 class SubUser(__User__):
+    def __new__(cls, test=None, options: Options | None = None):
+        target = _backend_class(cls, SubUser, options, "SubUser")
+        return super().__new__(target)
+
     def __init__(self, test, options: Options):
         self.module = options.sub_module
         super().__init__(test, options)
