@@ -5,6 +5,8 @@ from collections.abc import Callable
 from attrs import Factory, define
 from parameterized import param
 
+from generic_grader.utils.docs import make_call_str
+
 
 def options_to_params(options):
     try:
@@ -144,6 +146,22 @@ class Options:
     header_ratio: float = 0.9
     strict_headers: bool = False
     strict_column_order: bool = False
+
+    # Wording.  These methods shape how messages name the object under test,
+    # so an options subclass can describe a different kind of callable.
+    # They are methods, not attrs fields.
+
+    def call_str(self) -> str:
+        """Return the call shown in messages, e.g. `main(1, b=2)`."""
+        return make_call_str(self.obj_name, self.args, self.kwargs)
+
+    def obj_noun(self) -> str:
+        """Return the noun naming the object under test, e.g. "function"."""
+        return "function"
+
+    def call_phrase(self) -> str:
+        """Return the phrase that introduces the call string in messages."""
+        return "when called as"
 
     def __attrs_post_init__(self):
         """Check that the attributes are of the correct type."""

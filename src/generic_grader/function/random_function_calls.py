@@ -6,7 +6,6 @@ from attrs import evolve
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import make_call_str
 from generic_grader.utils.math_utils import n_trials
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.user import SubUser
@@ -19,7 +18,7 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check the randomness of the functions(s) called"
         f" from within function call `{call_str}`"

@@ -5,7 +5,7 @@ import os
 
 from attrs import evolve
 
-from generic_grader.utils.docs import get_wrapper, make_call_str
+from generic_grader.utils.docs import get_wrapper
 from generic_grader.utils.exceptions import RefFileNotFoundError
 from generic_grader.utils.math_utils import calc_log_limit
 from generic_grader.utils.user import RefUser, SubUser
@@ -67,14 +67,14 @@ def reference_test(func):
                 # Silent overwrite if exists.
                 os.replace(filename, f"sub_{filename}")
             except FileNotFoundError:
-                call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+                call_str = o.call_str()
                 self.failureException = FileNotFoundError
                 message = (
                     "\n\nHint:\n"
                     + text_wrapper.fill(
                         f"The file `{filename}` was not found.  Make sure your"
-                        f" `{o.obj_name}` function creates a file named"
-                        f" `{filename}` when called as `{call_str}`"
+                        f" `{o.obj_name}` {o.obj_noun()} creates a file named"
+                        f" `{filename}` {o.call_phrase()} `{call_str}`"
                         + (o.entries and f" with entries={o.entries}." or ".")
                     )
                     + f"\n\n{self.student_user.format_log()}"

@@ -7,7 +7,7 @@ from parameterized import parameterized
 
 from generic_grader.utils.array_diff import array_compare
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str
+from generic_grader.utils.docs import get_wrapper
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.reference_test import reference_test
 from generic_grader.utils.safe_equal import safe_assert_equal
@@ -20,10 +20,10 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check that the value(s) returned"
-        f" from your `{o.sub_module}.{o.obj_name}` function when called as `{call_str}`"
+        f" from your `{o.sub_module}.{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " match the reference value(s)."
     )
@@ -51,18 +51,18 @@ def build(the_options):
             actual = self.student_user.returned_values
             expected = self.ref_user.returned_values
 
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
             formatted_log = self.student_user.format_log()
             expected_type = type(expected)
 
             type_msg = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
-                    f"Your `{o.obj_name}` function"
+                    f"Your `{o.obj_name}` {o.obj_noun()}"
                     f" returned a(n) {type(actual).__name__},"
                     f" but a(n) {expected_type.__name__} was expected."
                     "  Double check the type of the value(s) returned"
-                    f" from your `{o.obj_name}` function when called as `{call_str}`"
+                    f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}." or ".")
                     + (o.hint and f"  {o.hint}")
                 )
@@ -72,10 +72,10 @@ def build(the_options):
             value_msg = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
-                    f"Your `{o.obj_name}` function's return value(s)"
+                    f"Your `{o.obj_name}` {o.obj_noun()}'s return value(s)"
                     " did not match the expected return value(s)."
                     "  Double check the value(s) returned"
-                    f" from your `{o.obj_name}` function when called as `{call_str}`"
+                    f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}." or ".")
                     + (o.hint and f"  {o.hint}")
                 )

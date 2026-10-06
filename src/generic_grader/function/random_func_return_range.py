@@ -7,7 +7,6 @@ from math import log10
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import make_call_str
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.safe_equal import safe_assert_equal
 from generic_grader.utils.user import SubUser
@@ -19,11 +18,11 @@ def doc_func(func, num, param):
     """
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         "Check the range of value(s) returned from your"
-        + f" `{o.sub_module}.{o.obj_name}` function"
-        + f" when called as `{call_str}`"
+        + f" `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+        + f" {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " matches the expected range."
     )
@@ -92,13 +91,13 @@ def build(the_options):
                 trials += 1
                 actual_set.add(self.student_user.call_obj())
 
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
             message = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
                     "The range of values returned from your"
-                    + f" `{o.sub_module}.{o.obj_name}` function"
-                    + f" when called as `{call_str}`"
+                    + f" `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+                    + f" {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}" or "")
                     + " did not match the expected range."
                     + (o.hint and f"  {o.hint}" or "")

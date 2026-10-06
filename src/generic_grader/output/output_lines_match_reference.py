@@ -6,7 +6,7 @@ from parameterized import parameterized
 from rapidfuzz.distance.Levenshtein import normalized_similarity
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str, make_line_range
+from generic_grader.utils.docs import get_wrapper, make_line_range
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.reference_test import reference_test
 from generic_grader.utils.safe_equal import make_diff, safe_assert_equal
@@ -18,10 +18,10 @@ def doc_func(func, num, param):
     o = param.args[0]
 
     line_range = make_line_range(o.start, o.n_lines)
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check that the formatting of output {line_range}"
-        f" from your `{o.obj_name}` function when called as `{call_str}`"
+        f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " matches the reference formatting."
     )
@@ -52,7 +52,7 @@ def build(the_options):
             expected = self.ref_user.read_log()
 
             line_range = make_line_range(o.start, o.n_lines)
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
 
             if o.ratio < 1:
                 # Use rapidfuzz for partial matching (avoids O(n²) difflib
@@ -68,7 +68,7 @@ def build(the_options):
                         "Your output is not sufficiently similar to the"
                         " expected output."
                         f"  Double check the formatting of output {line_range}"
-                        f" of your `{o.obj_name}` function when called as"
+                        f" of your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()}"
                         f" `{call_str}`"
                         + (o.entries and f" with entries={o.entries}." or ".")
                         + (o.hint and f"  {o.hint}" or "")
@@ -83,7 +83,7 @@ def build(the_options):
                     + self.wrapper.fill(
                         "Your output did not match the expected output."
                         f"  Double check the formatting of output {line_range}"
-                        f" of your `{o.obj_name}` function when called as"
+                        f" of your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()}"
                         f" `{call_str}`"
                         + (o.entries and f" with entries={o.entries}." or ".")
                         + (o.hint and f"  {o.hint}" or "")

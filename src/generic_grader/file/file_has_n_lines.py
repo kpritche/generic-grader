@@ -5,7 +5,7 @@ import unittest
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str, oxford_list
+from generic_grader.utils.docs import get_wrapper, oxford_list
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.reference_test import reference_test
 from generic_grader.utils.safe_equal import safe_assert_equal
@@ -19,11 +19,11 @@ def doc_func(func, num, param):
     filenames = [f"`{filename}`" for filename in o.filenames]
     file_s = "file" if len(filenames) == 1 else "files"
     file_list_str = f"{file_s} {oxford_list(filenames)}"
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
     docstring = (
         f"Check the number of lines written to the {file_list_str}"
-        f" from your `{o.sub_module}.{o.obj_name}` function"
-        f" when called as `{call_str}`"
+        f" from your `{o.sub_module}.{o.obj_name}` {o.obj_noun()}"
+        f" {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}." or ".")
     )
 
@@ -64,13 +64,13 @@ def build(options):
             file_s = "file" if len(filenames) == 1 else "files"
             files_do = file_s + (" does" if len(filenames) == 1 else " do")
             file_list_str = f"{file_s} {oxford_list(filenames)}"
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
             message = (
                 "\n\nHint:\n"
                 + self.wrapper.fill(
                     f"Your output {files_do} not have the expected number of lines."
                     f"  Double check the number of lines written to the {file_list_str}"
-                    f" by your `{o.obj_name}` function when called as `{call_str}`"
+                    f" by your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (" with entries={o.entries}." if o.entries else ".")
                     + (f"  {o.hint}" if o.hint else "")
                 )

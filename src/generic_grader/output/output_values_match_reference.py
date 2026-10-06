@@ -5,7 +5,7 @@ import unittest
 from parameterized import parameterized
 
 from generic_grader.utils.decorators import weighted
-from generic_grader.utils.docs import get_wrapper, make_call_str, ordinalize
+from generic_grader.utils.docs import get_wrapper, ordinalize
 from generic_grader.utils.options import options_to_params
 from generic_grader.utils.reference_test import reference_test
 from generic_grader.utils.safe_equal import safe_assert_equal
@@ -16,13 +16,13 @@ def doc_func(func, num, param):
 
     o = param.args[0]
 
-    call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+    call_str = o.call_str()
 
     nth_value_string = f"{ordinalize(o.value_n)} value" if o.value_n else "values"
 
     docstring = (
         f"Check that the {nth_value_string} on output line {o.line_n}"
-        + f" from your `{o.obj_name}` function when called as `{call_str}`"
+        + f" from your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
         + (o.entries and f" with entries={o.entries}" or "")
         + " match the reference values."
     )
@@ -49,7 +49,7 @@ def build(the_options):
             o = options
 
             line_nth = ordinalize(o.line_n)
-            call_str = make_call_str(o.obj_name, o.args, o.kwargs)
+            call_str = o.call_str()
 
             # Get the actual and expected values
             actual = (
@@ -68,7 +68,7 @@ def build(the_options):
                 + self.wrapper.fill(
                     "Your output values did not match the expected values."
                     + f"  Double check the {value_string} in the {line_nth} output line"
-                    + f" of your `{o.obj_name}` function when called as `{call_str}`"
+                    + f" of your `{o.obj_name}` {o.obj_noun()} {o.call_phrase()} `{call_str}`"
                     + (o.entries and f" with entries={o.entries}." or ".")
                     + (o.hint and f"  {o.hint}")
                 )
