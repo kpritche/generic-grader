@@ -54,6 +54,7 @@ HINT = (
 
 def names_unit(text):
     """Whether `text` gives a unit, e.g. "(m/s)", "[kg]", "in seconds", "%"."""
+    text = re.sub(r"'s\b", "", text)  # "the ball's span": that s is not seconds
     if re.search(r"[%$°µ]", text):
         return True
     if re.search(r"[(\[][^)\]]*[A-Za-z][^)\]]*[)\]]", text):

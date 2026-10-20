@@ -287,6 +287,13 @@ def test_comments_init_without_units(fix_syspath):
     )
 
 
+def test_comments_possessive_s_is_not_seconds(fix_syspath):
+    source = GOOD.replace("# time span to simulate (s)", "# the ball's flight span")
+    assert_fails(
+        make_test("comment_coverage", source, GOOD), "`duration` is initialized without"
+    )
+
+
 def test_comments_init_unit_on_line_above(fix_syspath):
     source = GOOD.replace(
         "    duration = 5  # time span to simulate (s)",
