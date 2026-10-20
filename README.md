@@ -54,6 +54,34 @@ pip install generic-grader
    python -m unittest tests/config.py
    ```
 
+## Programming standards checks
+
+Six checks in `generic_grader.style` grade code quality rather than output.
+Each lists every problem it finds by line number.
+
+| Check | Fails when |
+|---|---|
+| `header` | The header docstring is missing, keeps template placeholder text, has a description under 8 words, or lacks Assignment/Author; or a function other than `main` has no docstring naming its parameters and what it returns |
+| `structure` | An import sits inside a function or after code, code runs outside a function, template instruction lines remain, or `main()`/the `__main__` block is missing (when the reference has them) |
+| `comment_coverage` | A variable initialized to a number (or read with `input()`) has no comment giving its units, or calculations/output run with no comment nearby |
+| `formatting` | More than 3 lines have tab or non-multiple-of-4 indentation, missing spaces around `=`/comparisons or after commas, lines over `max_line_length`, two statements on one line, or no blank line before a top-level `def` |
+| `names` | A name overwrites a built-in or an imported module, or is a single letter or filler word (loop variables exempt) |
+| `hardcoding` | A number is typed into a calculation or comparison, or a decimal result is typed into output text |
+
+Names and numbers the reference uses are always allowed; `allowed_names` and
+`allowed_literals` add to them, and `max_violations` sets how many problems a
+check tolerates.  To score a check as a rubric deduction, give it `weight=0`
+and a `deduction`: it then scores `-deduction` when it fails and 0 when it
+passes, so the assignment's point total does not change.
+
+``` python
+from generic_grader.style import header, names
+from generic_grader.utils.options import Options
+
+test_90_TestHeader = header.build(Options(sub_module="hello_user", deduction=0.1))
+test_91_TestNames = names.build(Options(sub_module="hello_user", deduction=0.1))
+```
+
 
 ## Contributing
 
