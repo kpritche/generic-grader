@@ -59,6 +59,18 @@ class Options:
     # Code
     expected_minimum_depth: int = 1
 
+    # Programming standards (style.header, style.structure, ...)
+    # A standards check with weight 0 and a deduction costs `deduction` points
+    # when it fails and nothing when it passes, so it never changes a task's
+    # point total.
+    deduction: int | float = 0.0
+    max_violations: int | None = None  # None uses the check's own default
+    max_line_length: int = 99
+    # Names and numbers the reference solution uses are always allowed; these
+    # add to them.
+    allowed_names: tuple = ()
+    allowed_literals: tuple = ()
+
     # Plots / Image (see #156 for planned Enum replacement)
     prop: str = ""
     prop_kwargs: dict = Factory(dict)
