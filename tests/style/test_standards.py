@@ -272,7 +272,9 @@ def test_structure_ordinary_comment_not_leftover(fix_syspath):
         "# Import statements go above; this line stays.\n"
         "pass\n"
     )
-    assert_passes(make_test("structure", source, GOOD))
+    # Graded against itself so only the leftover-comment rule is under test;
+    # with_main() drops main()'s use of math, which other rules would report.
+    assert_passes(make_test("structure", source, source))
 
 
 def test_structure_missing_guard(fix_syspath):
