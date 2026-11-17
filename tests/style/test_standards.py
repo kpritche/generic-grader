@@ -251,6 +251,30 @@ def test_structure_template_leftover(fix_syspath):
     assert_fails(make_test("structure", source, GOOD), "instruction line is still here")
 
 
+def test_structure_template_leftover_comments(fix_syspath):
+    # The real template's instruction lines are comments, not docstrings.
+    for line in (
+        "# Write any import statements here (and delete this line).",
+        "# Write your code here (and delete this line).",
+    ):
+        source = with_main(f"{line}\npass\n")
+        assert_fails(
+            make_test("structure", source, GOOD), "instruction line is still here"
+        )
+    top = "# Write any import statements here (and delete this line).\n"
+    source = GOOD.replace("import math\n", top + "import math\n")
+    assert_fails(make_test("structure", source, GOOD), "instruction line is still here")
+
+
+def test_structure_ordinary_comment_not_leftover(fix_syspath):
+    source = with_main(
+        "# Write your code to read the speed, then delete the bad readings.\n"
+        "# Import statements go above; this line stays.\n"
+        "pass\n"
+    )
+    assert_passes(make_test("structure", source, GOOD))
+
+
 def test_structure_missing_guard(fix_syspath):
     source = GOOD[: GOOD.index("\n\nif __name__")] + "\n\n\nmain()\n"
     message = assert_fails(make_test("structure", source, GOOD), "outside any function")
