@@ -6,6 +6,13 @@ the top of the file, code belongs inside functions, and the template's
 instruction lines ("... and delete this line") must be gone.  A module-level
 assignment of a literal (a named constant) is allowed.  main() and the
 `__main__` block are required only when the reference has them.
+
+An import the program never uses is reported too.  A name counts as used when
+it is loaded anywhere in the file (a call, an attribute base such as `math.pi`,
+an f-string, a decorator); an aliased import is judged by its alias.  Never
+reported: `__future__` imports, names listed in `__all__`, and any import of a
+module the reference also imports, so a template-provided import that the
+reference itself leaves unused is not held against a student.
 """
 
 import ast
@@ -30,7 +37,8 @@ HINT = (
     "Keep the template's layout: the header, then all imports, then function"
     ' definitions, then the `if __name__ == "__main__":` block that calls'
     " main().  Put the program's code inside main() or another function, and"
-    " delete the template's instruction lines."
+    " delete the template's instruction lines.  Delete any import the program"
+    " does not use."
 )
 
 
@@ -64,6 +72,66 @@ def defines_main(tree):
 
 def has_guard(tree):
     return any(is_main_guard(n) for n in tree.body)
+
+
+def imported_bindings(tree):
+    """Return (bound name, module, line) for each import that binds a name."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split(".")[0]
+                found.append((bound, alias.name, node.lineno))
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for alias in node.names:
+                if alias.name != "*":
+                    found.append((alias.asname or alias.name, node.module, node.lineno))
+    return found
+
+
+def exported_names(tree):
+    """Return the names a module-level `__all__` lists."""
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets):
+            try:
+                names.update(ast.literal_eval(node.value))
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                pass
+    return names
+
+
+def unused_imports(tree, ref):
+    """Return a Violation for each import the program never uses."""
+    used = {
+        n.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+    }
+    exempt = exported_names(tree)
+    shared = {module for _, module, _ in imported_bindings(ref.tree)} if ref else set()
+    violations = []
+    for bound, module, line in imported_bindings(tree):
+        if (
+            bound in used
+            or bound in exempt
+            or module.split(".")[0] == "__future__"
+            or module in shared
+        ):
+            continue
+        violations.append(
+            Violation(
+                line,
+                f"`{bound}` is imported on line {line} but never used; delete the import.",
+            )
+        )
+    return violations
 
 
 def analyze(sub, ref, options):
@@ -114,6 +182,8 @@ def analyze(sub, ref, options):
                         "Imports belong at the top of the file, not inside a function.",
                     )
                 )
+
+    violations.extend(unused_imports(tree, ref))
 
     if (ref is None or defines_main(ref.tree)) and not defines_main(tree):
         violations.append(
