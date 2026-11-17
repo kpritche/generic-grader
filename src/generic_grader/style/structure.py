@@ -3,7 +3,8 @@
 The template orders a program as: header, imports, function definitions, then
 the `if __name__ == "__main__":` block that calls main().  Imports belong at
 the top of the file, code belongs inside functions, and the template's
-instruction lines ("... and delete this line") must be gone.  A module-level
+instruction lines ("... and delete this line"), in comments or docstrings,
+must be gone.  A module-level
 assignment of a literal (a named constant) is allowed.  main() and the
 `__main__` block are required only when the reference has them.
 """
@@ -70,14 +71,13 @@ def analyze(sub, ref, options):
     violations = []
     tree = sub.tree
 
+    message = "The template's instruction line is still here; delete it."
     for node in ast.walk(tree):
         if is_docstring(node) and LEFTOVER.search(node.value.value):
-            violations.append(
-                Violation(
-                    node.lineno,
-                    "The template's instruction line is still here; delete it.",
-                )
-            )
+            violations.append(Violation(node.lineno, message))
+    for line, (text, _) in sub.comments.items():
+        if LEFTOVER.search(text):
+            violations.append(Violation(line, message))
 
     after_code = False
     for i, node in enumerate(tree.body):
