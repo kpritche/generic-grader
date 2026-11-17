@@ -423,6 +423,67 @@ def test_names_loop_variables_may_be_single_letters(fix_syspath):
     assert_passes(make_test("names", source, GOOD))
 
 
+CAMEL_FUNC = '''\
+def calcArea(width_m, height_m):
+    """Return the area (m^2) of a rectangle."""
+    return width_m * height_m
+
+
+'''
+
+
+@pytest.mark.parametrize(
+    "name, suggestion", [("calcArea", "calc_area"), ("CalcArea", "calc_area")]
+)
+def test_names_function_not_snake_case(fix_syspath, name, suggestion):
+    top = CAMEL_FUNC.replace("calcArea", name)
+    source = with_main(f"print({name}(2, 3))\n", top=top)
+    assert_fails(
+        make_test("names", source, GOOD),
+        f"`{name}` is not snake_case; name it `{suggestion}`.",
+    )
+
+
+def test_names_variable_not_snake_case(fix_syspath):
+    source = with_main("launchSpeed = 2  # speed (m/s)\nprint(launchSpeed)\n")
+    assert_fails(
+        make_test("names", source, GOOD),
+        "`launchSpeed` is not snake_case; name it `launch_speed`.",
+    )
+
+
+def test_names_module_constant_may_be_upper_case(fix_syspath):
+    top = "MAX_HEIGHT_M = 100  # height limit (m)\n\n\n"
+    source = with_main("print(MAX_HEIGHT_M)\n", top=top)
+    assert_passes(make_test("names", source, GOOD))
+
+
+def test_names_local_upper_case_is_not_a_constant(fix_syspath):
+    source = with_main("MAX_SPEED = 2  # speed (m/s)\nprint(MAX_SPEED)\n")
+    assert_fails(make_test("names", source, GOOD), "`MAX_SPEED` is not snake_case")
+
+
+def test_names_snake_case_with_digits_passes(fix_syspath):
+    source = with_main("area2 = 2  # second area (m^2)\nprint(area2)\n")
+    assert_passes(make_test("names", source, GOOD))
+
+
+def test_names_class_names_use_cap_words(fix_syspath):
+    top = "class Ball:\n    pass\n\n\n"
+    assert_passes(make_test("names", with_main("print(Ball)\n", top=top), GOOD))
+    top = "class ball_state:\n    pass\n\n\n"
+    assert_fails(
+        make_test("names", with_main("print(ball_state)\n", top=top), GOOD),
+        "`ball_state` is not CapWords",
+    )
+
+
+def test_names_convention_exempt_when_reference_uses_name(fix_syspath):
+    source = with_main("launchSpeed = 2  # speed (m/s)\nprint(launchSpeed)\n")
+    assert_passes(make_test("names", source, source))
+    assert_passes(make_test("names", source, GOOD, allowed_names=("launchSpeed",)))
+
+
 # Hardcoding
 
 
