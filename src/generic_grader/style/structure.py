@@ -10,9 +10,9 @@ assignment of a literal (a named constant) is allowed.  main() and the
 An import the program never uses is reported too.  A name counts as used when
 it is loaded anywhere in the file (a call, an attribute base such as `math.pi`,
 an f-string, a decorator); an aliased import is judged by its alias.  Never
-reported: `__future__` imports, names listed in `__all__`, and any import of a
-module the reference also imports, so a template-provided import that the
-reference itself leaves unused is not held against a student.
+reported: `__future__` imports, names listed in `__all__`, and an import of a
+module the reference also imports and leaves unused, so a template-provided
+import nobody needs is not held against a student.
 """
 
 import ast
@@ -115,7 +115,21 @@ def unused_imports(tree, ref):
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
     }
     exempt = exported_names(tree)
-    shared = {module for _, module, _ in imported_bindings(ref.tree)} if ref else set()
+    # Exempt only modules the reference imports AND leaves unused (a template
+    # import nobody needs).  A module the reference uses is still reported
+    # when the student imports it and never uses it.
+    shared = set()
+    if ref is not None:
+        ref_used = {
+            n.id
+            for n in ast.walk(ref.tree)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        shared = {
+            module
+            for bound, module, _ in imported_bindings(ref.tree)
+            if bound not in ref_used
+        }
     violations = []
     for bound, module, line in imported_bindings(tree):
         if (

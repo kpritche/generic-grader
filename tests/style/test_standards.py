@@ -295,9 +295,17 @@ def test_structure_unused_from_import_fails(fix_syspath):
 
 
 def test_structure_reference_shared_unused_import_passes(fix_syspath):
+    # The reference also imports statistics and never uses it (a template
+    # import), so the student is not penalized for leaving it in.
     reference = GOOD.replace("import math\n", "import math\nimport statistics\n")
-    source = reference.replace("math.floor", "int")
-    assert_passes(make_test("structure", source, reference))
+    assert_passes(make_test("structure", reference, reference))
+
+
+def test_structure_unused_import_reference_uses_fails(fix_syspath):
+    # The reference imports math AND uses it; a student who imports math and
+    # never uses it is still reported.
+    source = GOOD.replace("math.floor", "int")
+    assert_fails(make_test("structure", source, GOOD), "`math` is imported")
 
 
 def test_structure_import_used_in_decorator_or_all_passes(fix_syspath):
