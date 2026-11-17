@@ -262,6 +262,61 @@ def test_structure_main_not_required_when_reference_has_none(fix_syspath):
     assert_passes(make_test("structure", module, module))
 
 
+def test_structure_unused_import_fails(fix_syspath):
+    source = GOOD.replace("import math\n", "import math\nimport statistics\n")
+    assert_fails(
+        make_test("structure", source, GOOD),
+        "line 14:",
+        "`statistics` is imported on line 14 but never used; delete the import.",
+    )
+
+
+def test_structure_unused_plain_import_fails(fix_syspath):
+    reference = GOOD.replace("import math\n", "").replace("math.floor", "int")
+    source = GOOD.replace("math.floor", "int")
+    assert_fails(make_test("structure", source, reference), "`math` is imported")
+
+
+def test_structure_used_alias_passes(fix_syspath):
+    source = GOOD.replace("import math\n", "import math as m\n").replace(
+        "math.floor", "m.floor"
+    )
+    assert_passes(make_test("structure", source, GOOD))
+
+
+def test_structure_unused_alias_fails(fix_syspath):
+    source = GOOD.replace("import math\n", "import math\nimport numpy as np\n")
+    assert_fails(make_test("structure", source, GOOD), "`np` is imported")
+
+
+def test_structure_unused_from_import_fails(fix_syspath):
+    source = GOOD.replace("import math\n", "import math\nfrom numpy import sqrt\n")
+    assert_fails(make_test("structure", source, GOOD), "`sqrt` is imported")
+
+
+def test_structure_reference_shared_unused_import_passes(fix_syspath):
+    reference = GOOD.replace("import math\n", "import math\nimport statistics\n")
+    source = reference.replace("math.floor", "int")
+    assert_passes(make_test("structure", source, reference))
+
+
+def test_structure_import_used_in_decorator_or_all_passes(fix_syspath):
+    source = GOOD.replace(
+        "import math\n",
+        'import math\nimport functools\nimport os\n\n__all__ = ["os"]\n',
+    ).replace("def height", "@functools.cache\ndef height")
+    assert_passes(make_test("structure", source, GOOD))
+
+
+def test_structure_future_import_passes(fix_syspath):
+    source = GOOD.replace(
+        '"""\n\nimport math',
+        '"""\n\nfrom __future__ import annotations\nimport math',
+        1,
+    )
+    assert_passes(make_test("structure", source, GOOD))
+
+
 # Comment coverage
 
 
